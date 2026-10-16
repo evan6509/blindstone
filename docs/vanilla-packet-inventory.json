@@ -1,0 +1,1619 @@
+{
+  "minecraft": "26.3",
+  "method": "Lexical class references excluding imports; not a complete send-path audit.",
+  "protection_active": false,
+  "packets": [
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundClearDialogPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/DialogCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundDisconnectPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/Connection.java",
+        "net/minecraft/network/RateKickingConnection.java",
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerCommonPacketListenerImpl.java",
+        "net/minecraft/server/network/ServerConnectionListener.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundKeepAlivePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerCommonPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundPingPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundPostEffectsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/ServerPackCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/ServerPackCommand.java",
+        "net/minecraft/server/network/config/ServerResourcePackConfigurationTask.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundServerLinksPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundShowDialogPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/DebugConfigCommand.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundStoreCookiePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/cookie/ServerboundCookieResponsePacket.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundTransferPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/TransferCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
+        "net/minecraft/network/protocol/common/CommonPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/config/SynchronizeRegistriesTask.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.configuration.ClientboundCodeOfConductPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/configuration/ClientConfigurationPacketListener.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/server/network/config/ServerCodeOfConductConfigurationTask.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.configuration.ClientboundFinishConfigurationPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/configuration/ClientConfigurationPacketListener.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/server/network/config/JoinWorldTask.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.configuration.ClientboundRegistryDataPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/configuration/ClientConfigurationPacketListener.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/server/network/config/SynchronizeRegistriesTask.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.configuration.ClientboundResetChatPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/configuration/ClientConfigurationPacketListener.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/configuration/ClientConfigurationPacketListener.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationPacketTypes.java",
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
+        "net/minecraft/network/protocol/cookie/ClientCookiePacketListener.java",
+        "net/minecraft/network/protocol/cookie/CookiePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/network/protocol/login/LoginProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundAddEntityPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/entity/Entity.java",
+        "net/minecraft/world/entity/LivingEntity.java",
+        "net/minecraft/world/entity/boss/enderdragon/EnderDragon.java",
+        "net/minecraft/world/entity/decoration/ItemFrame.java",
+        "net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java",
+        "net/minecraft/world/entity/decoration/painting/Painting.java",
+        "net/minecraft/world/entity/item/FallingBlockEntity.java",
+        "net/minecraft/world/entity/monster/Shulker.java",
+        "net/minecraft/world/entity/monster/warden/Warden.java",
+        "net/minecraft/world/entity/projectile/FishingHook.java",
+        "net/minecraft/world/entity/projectile/LlamaSpit.java",
+        "net/minecraft/world/entity/projectile/Projectile.java",
+        "net/minecraft/world/entity/projectile/ShulkerBullet.java",
+        "net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundAddTransientBlockPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/entity/item/FallingBlockEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundAnimatePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundAwardStatsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/world/level/block/entity/BannerBlockEntity.java",
+        "net/minecraft/world/level/block/entity/BeaconBlockEntity.java",
+        "net/minecraft/world/level/block/entity/BrushableBlockEntity.java",
+        "net/minecraft/world/level/block/entity/CampfireBlockEntity.java",
+        "net/minecraft/world/level/block/entity/ConduitBlockEntity.java",
+        "net/minecraft/world/level/block/entity/CopperGolemStatueBlockEntity.java",
+        "net/minecraft/world/level/block/entity/CreakingHeartBlockEntity.java",
+        "net/minecraft/world/level/block/entity/DecoratedPotBlockEntity.java",
+        "net/minecraft/world/level/block/entity/JigsawBlockEntity.java",
+        "net/minecraft/world/level/block/entity/ShelfBlockEntity.java",
+        "net/minecraft/world/level/block/entity/SignBlockEntity.java",
+        "net/minecraft/world/level/block/entity/SkullBlockEntity.java",
+        "net/minecraft/world/level/block/entity/SpawnerBlockEntity.java",
+        "net/minecraft/world/level/block/entity/StructureBlockEntity.java",
+        "net/minecraft/world/level/block/entity/TestBlockEntity.java",
+        "net/minecraft/world/level/block/entity/TestInstanceBlockEntity.java",
+        "net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java",
+        "net/minecraft/world/level/block/entity/TrialSpawnerBlockEntity.java",
+        "net/minecraft/world/level/block/entity/vault/VaultBlockEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBlockEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ChunkHolder.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/level/ServerPlayerGameMode.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java",
+        "net/minecraft/world/entity/item/FallingBlockEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBossEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerBossEvent.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundBundlePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/MinecraftServer.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/PlayerChunkSender.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/PlayerChunkSender.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ChunkMap.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundClearTitlesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/TitleCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundCommandsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundContainerClosePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/world/inventory/CraftingMenu.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundCooldownPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/item/ServerItemCooldowns.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundCustomChatCompletionsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDamageEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDebugBlockValuePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDebugChunkValuePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDebugEntityValuePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDebugEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDebugSamplePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDeleteChatPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundEntityEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/MinecraftServer.java",
+        "net/minecraft/server/level/ServerLevel.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java",
+        "net/minecraft/world/entity/LivingEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java",
+        "net/minecraft/world/entity/animal/happyghast/HappyGhast.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundExplodePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/PlayerChunkSender.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundGameEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/MinecraftServer.java",
+        "net/minecraft/server/level/DemoMode.java",
+        "net/minecraft/server/level/ServerLevel.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java",
+        "net/minecraft/world/entity/animal/fish/Pufferfish.java",
+        "net/minecraft/world/entity/monster/ElderGuardian.java",
+        "net/minecraft/world/entity/projectile/arrow/AbstractArrow.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundGameRuleValuesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundGameTestHighlightPosPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundInitializeBorderPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/PlayerChunkSender.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundLevelEventPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java",
+        "net/minecraft/world/level/portal/TeleportTransition.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java",
+        "net/minecraft/world/entity/animal/cow/MushroomCow.java",
+        "net/minecraft/world/item/BucketItem.java",
+        "net/minecraft/world/level/block/PowderSnowBlock.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundLightUpdatePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ChunkHolder.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundLoginPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundLowDiskSpaceWarningPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/dedicated/DedicatedServer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundMapItemDataPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/level/saveddata/maps/MapItemSavedData.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundMoveEntityPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundMoveMinecartPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundOpenBookPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundOpenScreenPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlaceGhostRecipePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerChatPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayerGameMode.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerLookAtPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundProjectilePowerPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRecipeBookRemovePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRecipeBookSettingsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/world/entity/LivingEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundResetScorePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerScoreboard.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRespawnPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundRotateHeadPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ChunkHolder.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSelectAdvancementsTabPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/PlayerAdvancements.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundServerDataPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/TitleCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetBorderCenterPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetBorderLerpSizePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetBorderSizePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetBorderWarningDelayPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetBorderWarningDistancePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetCameraPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ChunkMap.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/MinecraftServer.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerScoreboard.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java",
+        "net/minecraft/world/entity/Leashable.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java",
+        "net/minecraft/world/entity/player/Player.java",
+        "net/minecraft/world/item/MaceItem.java",
+        "net/minecraft/world/item/enchantment/effects/ApplyEntityImpulse.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java",
+        "net/minecraft/world/entity/LivingEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetExperiencePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetHealthPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetObjectivePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerScoreboard.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetPassengersPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java",
+        "net/minecraft/server/level/ServerPlayer.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/entity/player/Inventory.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerScoreboard.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetScorePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerScoreboard.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/TitleCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetTimePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/MinecraftServer.java",
+        "net/minecraft/world/clock/ServerClockManager.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/TitleCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/TitleCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSoundEntityPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerLevel.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSoundPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/PlaySoundCommand.java",
+        "net/minecraft/server/level/ServerLevel.java",
+        "net/minecraft/server/players/PlayerList.java",
+        "net/minecraft/world/entity/raid/Raid.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundStopSoundPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/commands/StopSoundCommand.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSwingAnimationPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/entity/LivingEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundSystemChatPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTabListPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTagQueryPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/entity/LivingEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/entity/Entity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTickingStatePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerTickRateManager.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTickingStepPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/ServerTickRateManager.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/world/waypoints/WaypointTransmitter.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/PlayerAdvancements.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/level/ServerPlayer.java",
+        "net/minecraft/server/players/PlayerList.java",
+        "net/minecraft/world/entity/LivingEntity.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/ClientGamePacketListener.java",
+        "net/minecraft/network/protocol/game/GamePacketTypes.java",
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/server/players/PlayerList.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.login.ClientboundCustomQueryPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/login/ClientLoginPacketListener.java",
+        "net/minecraft/network/protocol/login/LoginPacketTypes.java",
+        "net/minecraft/network/protocol/login/LoginProtocols.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.login.ClientboundHelloPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/login/ClientLoginPacketListener.java",
+        "net/minecraft/network/protocol/login/LoginPacketTypes.java",
+        "net/minecraft/network/protocol/login/LoginProtocols.java",
+        "net/minecraft/server/network/ServerLoginPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.login.ClientboundLoginCompressionPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/login/ClientLoginPacketListener.java",
+        "net/minecraft/network/protocol/login/LoginPacketTypes.java",
+        "net/minecraft/network/protocol/login/LoginProtocols.java",
+        "net/minecraft/server/network/ServerLoginPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/Connection.java",
+        "net/minecraft/network/protocol/login/ClientLoginPacketListener.java",
+        "net/minecraft/network/protocol/login/LoginPacketTypes.java",
+        "net/minecraft/network/protocol/login/LoginProtocols.java",
+        "net/minecraft/server/network/ServerHandshakePacketListenerImpl.java",
+        "net/minecraft/server/network/ServerLoginPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.login.ClientboundLoginFinishedPacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/login/ClientLoginPacketListener.java",
+        "net/minecraft/network/protocol/login/LoginPacketTypes.java",
+        "net/minecraft/network/protocol/login/LoginProtocols.java",
+        "net/minecraft/server/network/ServerLoginPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.ping.ClientboundPongResponsePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/game/GameProtocols.java",
+        "net/minecraft/network/protocol/ping/ClientPongPacketListener.java",
+        "net/minecraft/network/protocol/ping/PingPacketTypes.java",
+        "net/minecraft/network/protocol/status/StatusProtocols.java",
+        "net/minecraft/server/network/ServerGamePacketListenerImpl.java",
+        "net/minecraft/server/network/ServerStatusPacketListenerImpl.java"
+      ]
+    },
+    {
+      "class": "net.minecraft.network.protocol.status.ClientboundStatusResponsePacket",
+      "runtime_status": "not_intercepted",
+      "referenced_by": [
+        "net/minecraft/network/protocol/status/ClientStatusPacketListener.java",
+        "net/minecraft/network/protocol/status/StatusPacketTypes.java",
+        "net/minecraft/network/protocol/status/StatusProtocols.java",
+        "net/minecraft/server/network/ServerStatusPacketListenerImpl.java"
+      ]
+    }
+  ]
+}

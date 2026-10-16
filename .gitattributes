@@ -1,0 +1,4 @@
+gradlew text eol=lf
+*.bat text eol=crlf
+# Preserve the supplied specification's intentional Markdown hard line breaks.
+docs/Blindstone-Spec.md whitespace=-blank-at-eol

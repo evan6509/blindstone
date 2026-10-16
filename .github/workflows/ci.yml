@@ -1,0 +1,36 @@
+name: Build and isolated integration tests
+
+on:
+  push:
+    branches: [codex/development]
+  pull_request:
+    branches: [main, codex/development]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+      - name: Build prototype
+        run: ./gradlew --no-daemon clean build
+      - name: Run isolated 26.3 integration tests
+        run: ./gradlew --no-daemon runGametest
+      - name: Verify server artifact
+        run: python3 scripts/verify_jar.py
