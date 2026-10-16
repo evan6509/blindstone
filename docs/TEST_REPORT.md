@@ -1,65 +1,52 @@
-# Initial integration spike test report
+# Development pipeline test report
 
-**Date:** October 16, 2026. **Protection status:** inactive; not ready for player use.
+**Date:** October 16, 2026. **Artifact:** `blindstone-0.1.0-dev.2+mc26.3.jar`. **Public activation/admission:** refused; development mode denies real logins.
 
 ## Confirmed local evidence
 
 | Check | Result |
 | --- | --- |
-| Exact toolchain resolves; vanilla sources generate | PASS — Minecraft 26.3, Loader 0.19.5, Fabric API 0.163.0+26.3, Loom 1.17.14, Gradle 9.6.1, Java 25 |
-| Clean production build | PASS — `./gradlew --no-daemon clean build runGametest` |
-| Blindstone server integration tests | PASS — 18 Blindstone cases, zero failures/errors; XML also contains vanilla's one `always_pass` case, for 19 total |
-| Production artifact verification | PASS — `python3 scripts/verify_jar.py`; exact dependency pins, server environment, Java 25 classes, required admission mixin, no GameTest classes bundled |
-| Default actual server launch | PASS (expected refusal) — `./gradlew --no-daemon runServer --args nogui` exits nonzero during mod initialization with `Blindstone protection cannot activate: mandatory outgoing packet hooks are not implemented` |
-| Development admission hook | PASS — actual transformed `PlayerList.canPlayerLogin` returns the explicit development rejection in a running Fabric GameTest server |
-| Live chunk integrity within filtering call | PASS — serialized real section/biome/count/heightmap/block-entity data, section/entity object references and unsaved flag unchanged |
-| CI configuration | Added; GitHub-hosted execution has not been run |
+| Clean build and running Fabric server tests | PASS — `./gradlew --offline --no-daemon clean build runGametest` |
+| Blindstone tests | **75 passed**, zero failures/errors. XML also contains vanilla's one `always_pass`, for 76 total |
+| Original chunk/mask/state tests | 18 passed |
+| Geometry/resumable visibility tests | 17 passed |
+| Packet-policy/codec tests | 17 passed |
+| Filtered-light reference solver tests | 9 passed |
+| Configuration/diagnostic tests | 8 passed |
+| Transformed runtime/Connection tests | 6 passed |
+| Final artifact verification | PASS — exact pinned dependencies, server metadata, Java 25 bytecode, mandatory admission/send/lifecycle/tracker hooks and no bundled test classes |
+| Normal server startup | Expected refusal during mod initialization while release gates are incomplete |
+| Development real-player admission | Transformed `PlayerList.canPlayerLogin` rejects admission |
+| GitHub CI | Configuration present; current remote execution not checked in this checkpoint |
 
-The local runtime was Homebrew OpenJDK 25.0.4.1 on macOS ARM64. The test server used the plain pinned Fabric stack plus Blindstone and its test mod. Results are in `build/gametest-results.xml`; run directories and full logs are generated/ignored rather than committed.
+Toolchain: Minecraft 26.3 (unobfuscated names), Loader 0.19.5, Fabric API 0.163.0+26.3, Loom 1.17.14, Gradle 9.6.1, Homebrew OpenJDK 25.0.4.1 on macOS ARM64. No optimization mods or connected ordinary/adversarial clients were used.
 
-Verified development artifact: `build/libs/blindstone-0.1.0-dev.1+mc26.3.jar`.
+Artifact SHA-256: `977599a7ad8a2ffa653b9b31944acb932f2a7eb5c0502687d233864fa5c910f5`.
 
-SHA-256: `80b90e84d6971c4aa6b7040223d1f3643725a73e172a01d23971eb4bbb4d8907`.
+Results: `build/gametest-results.xml`; full generated logs/run directories are ignored. The final resource/artifact build was reverified after removing duplicate reload-error counting; the preceding complete suite covered the same filtering and runtime implementation.
 
-## What the 18 Blindstone tests establish
+## Evidence boundaries
 
-1. A sealed-room fixture and corresponding solid terrain produce identical filtered chunk-data payloads after vanilla codec round trips.
-2. Fully concealed block palettes contain only replacement terrain; non-air counts are 4096, fluid counts zero, and hidden block-entity entries are absent.
-3. Explicit masks restore only authorized blocks/air and matching initial block entities; adjacent ores and fluids remain hidden.
-4. Client heightmaps describe the filtered geometry, including a fake solid cutoff at Y64 above an originally empty chunk.
-5. Y63 is concealed, Y64 is preserved, and the world minimum is included; unprotected block entities survive.
-6. Filtering for an authorized viewer does not change the output for another viewer.
-7. Filtering a real loaded world chunk does not change its serialized state, object references or dirty flag during the call.
-8. Mutable caller bitsets/maps cannot alter immutable masks or a queued plan.
-9. Pending reveals do not authorize ordinary delivered-state reads before commit; committed plans cannot replay.
-10. Successive commits accumulate exact block masks without revealing neighboring blocks.
-11. Negative chunk, section and block-entity coordinates round trip with the correct local mask.
-12. Geometry changes invalidate pending work while retaining knowledge already delivered in the same tracking session.
-13. Another viewer, unload/reload at the same coordinate, and session reset reject old plans.
-14. Replacement plans invalidate older work; chunk/queue saturation refuses new work without granting visibility.
-15. Invalid bounds, oversized masks, out-of-range coordinates/sections and invalid budgets throw instead of yielding unfiltered output.
-16. Background calls to the chunk filter are rejected before world content is read.
-17. Missing outgoing protection hooks reject normal initialization.
-18. The mandatory transformed login hook denies development player admission.
+**Chunk/mask/state:** Sealed-room and corresponding solid terrain produce identical filtered chunk-data payloads. Authorized blocks/air and matching block entities restore individually. Counts/palettes/heightmaps agree with fake geometry. Negative coordinates, independent viewers, invalid bounds, stale/replaced/replayed plans, unload/reload, reset and bounded tracking are tested. Filtering a loaded real chunk preserves serialized state, object references and its unsaved flag during the call. This is narrower than complete saved-world/simulation equivalence over a long run.
 
-The code under test uses real 26.3 `LevelChunkSection` and `ClientboundLevelChunkPacketData` stream codecs and a running Minecraft server. The byte comparisons cover constructed chunk-data payloads. They are not captures of outgoing client deliveries, encrypted traffic, or a complete chunk-with-light packet.
+**Geometry:** Tests cover sealed walls, all directions, individual range limits, glass/panes, water/lava, doors, slabs, powder snow, conservative piston halos, camera collision clearance, immutable snapshots/masks, unavailable cells, fixed body/swept-path safety, invalid motion, and primitive-work ceilings. Resumable masks match uninterrupted evaluation; even a one-unit slice progresses. Entity point-sight follows the same opacity policy. A retained runtime job survives a remote block event and is invalidated by a local/halo event.
 
-## Required evidence still absent
+**Packet policies:** Real vanilla stream codecs test block/section updates, block entities, full chunks, isolated light masks, nested bundles, spawn validation/ordering, metadata allowlists, damage/reference stripping, removals, embedded movement paths and positional sound conversion. Source packets/shared chunk data remain unchanged. Sound assertions inspect encoded eighth-block integers rather than assuming more precision from distant-coordinate float getters.
 
-| Area | Status |
-| --- | --- |
-| Real per-player outgoing packet interception and decoded network delivery | Not implemented/tested |
-| Visibility geometry, third-person offsets, safety envelope and legitimate interaction authorization | Not implemented/tested |
-| Chunk lifecycle/geometry event wiring, movement and reveal timing | Not implemented/tested |
-| Single/multiple block corrections and subsequent block-entity updates | Not implemented/tested |
-| Hidden lighting and light crossing section/chunk boundaries | Not implemented/tested |
-| Non-player entity spawning, references, movement, combat and profiler signals | Not implemented/tested |
-| Secondary events, compounds, entity-attached sounds and bundles | Not implemented/tested |
-| Full startup hook readiness/runtime failure recovery and queue-overload disconnects | Admission/startup scaffolding tested; full enforcement recovery pending |
-| Config file/reload, inspect/report commands and sanitized runtime diagnostics | Pending; only development status/verify exist |
-| Real ordinary/adversarial clients, minimaps, freecam, X-ray and ESP | Not tested |
-| Existing-world saved-data/generation/seed/simulation equivalence across a full run | Not tested; the narrower live-chunk non-mutation check above passes |
-| SMP performance, tick percentiles, per-player memory/network cost and reveal latency | Not benchmarked; no capacity claim |
-| Optimization mods, other dimensions, other Minecraft versions | Not tested/supported |
+**Runtime hooks:** Netty `EmbeddedChannel` connections and actual `ServerGamePacketListenerImpl` instances exercise the transformed private Connection dispatch, listener/direct routes, recursive bundles, completion callbacks, tracking registration, unknown-payload disconnection and full-chunk replacement. A tiny-budget runtime fixture repeatedly refreshes visibility and verifies body-safety plus later sight block publications through that hook. This does not establish actual ordinary-client receipt or client rendering.
 
-All required packet paths and live acceptance scenarios in the specification remain release gates. A successful build and these passing tests establish a usable engineering foundation, not base-protection effectiveness.
+**Lighting:** The bounded reference solver propagates only filtered-state skylight/emission using vanilla opacity/face occlusion. Tests cover hidden-source equivalence, allowed torch propagation across sections/chunks, cave openings, glass/slab occlusion, attenuation distance, codec masks, immutable results and allocation/work/time refusal. A loaded-world fixture compares hidden real torch versus stone and restores the fixture afterward. Reconstruction is **not connected to outgoing delivery yet**; the active development packet policy remains all-dark. World-edge under-lighting is conservative and not a validated visual policy.
+
+**Configuration/diagnostics:** Strict schema/duplicate-key checks, safe replacements, actual world bounds, numeric budgets, immutable state, atomic defaults, validation/invalidation/publication ordering, reload retention, server-thread confinement and sanitized reports are tested. The report accepts aggregate typed fields and omits player identities, coordinates, seeds and raw world payloads. Readiness categories remain separate; a loaded hook alone is not marked live-tested.
+
+## Still required before enabling players
+
+- Coherent scheduled/cached lighting and boundary refresh on every relevant mask/world change; incremental heightmap consistency.
+- Complete type-specific entity spawn/metadata, passenger, projectile, item-stack and relative teleport adapters.
+- Supported compound particles and vanilla/custom compatibility payload policies instead of blanket suppression/disconnection.
+- Supported vehicles and fast movement, camera/coverage quality, interaction/combat and complete lifecycle/client-cache testing.
+- Systematic hook-readiness/failure injection, overload behavior and coherent online configuration/disable transitions.
+- Decoded network capture from two real clients, adversarial minimap/X-ray/freecam/ESP and exact client profiler comparisons.
+- Representative SMP CPU/tick/reveal-delay/network/memory measurements and every advertised optimization stack.
+
+No p95 performance, gameplay quality, client-profiler resistance, production protection or cross-version compatibility claim follows from these passing automated tests. The source packet inventory and [implementation roadmap](IMPLEMENTATION.md) retain the remaining release gates explicitly.

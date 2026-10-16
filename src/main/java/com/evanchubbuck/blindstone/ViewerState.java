@@ -2,6 +2,7 @@ package com.evanchubbuck.blindstone;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /** Server-thread-owned, bounded prototype state. No distance or client request grants visibility. */
 public final class ViewerState {
@@ -86,6 +87,13 @@ public final class ViewerState {
     public void reset() { chunks.clear(); }
 
     public int trackedCount() { return chunks.size(); }
+
+    public Set<Long> trackedChunks() { return Set.copyOf(chunks.keySet()); }
+
+    public Map<Integer, SectionVisibility> deliveredSections(long chunk) {
+        TrackedChunk tracked = chunks.get(chunk);
+        return tracked == null ? Map.of() : Map.copyOf(tracked.sent);
+    }
 
     public long pendingCount() { return chunks.values().stream().filter(c -> c.pending != null).count(); }
 

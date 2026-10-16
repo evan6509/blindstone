@@ -5,7 +5,14 @@
   "name": "Blindstone isolated integration tests",
   "environment": "server",
   "entrypoints": {
-    "fabric-gametest": ["com.evanchubbuck.blindstone.BlindstoneGameTests"]
+    "fabric-gametest": [
+      "com.evanchubbuck.blindstone.BlindstoneGameTests",
+      "com.evanchubbuck.blindstone.VisibilityGameTests",
+      "com.evanchubbuck.blindstone.PacketFilterGameTests",
+      "com.evanchubbuck.blindstone.ConfigurationGameTests",
+      "com.evanchubbuck.blindstone.RuntimeGameTests",
+      "com.evanchubbuck.blindstone.network.FilteredLightGameTests"
+    ]
   },
   "depends": {
     "blindstone": "*",

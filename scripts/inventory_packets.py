@@ -39,16 +39,40 @@ def main():
         # A known packet and the primary vanilla chunk sender guard against wrong/empty input.
         if "net/minecraft/server/network/PlayerChunkSender.java" not in references.get("ClientboundLevelChunkWithLightPacket", []):
             parser.error("Sources do not contain the expected 26.3 chunk send path")
+        policy_source = Path("src/main/java/com/evanchubbuck/blindstone/network/PacketFilter.java")
+        policy = policy_source.read_text() if policy_source.exists() else ""
+        pass_block = policy.split("PASSTHROUGH = Set.of(", 1)[-1].split(");", 1)[0] if policy else ""
+        allowed = set(re.findall(r"\b(Clientbound\w+Packet)\.class", pass_block))
+        handled = set(re.findall(r"instanceof (Clientbound\w+Packet)\b", policy))
+        transport = {"ClientboundDisconnectPacket", "ClientboundKeepAlivePacket", "ClientboundPingPacket",
+                     "ClientboundSystemChatPacket", "ClientboundPlayerChatPacket"}
+
+        def status(name):
+            simple = name.rsplit("/", 1)[-1][:-5]
+            if "/game/" not in name and "/common/" not in name:
+                return "outside_play_boundary"
+            if simple in transport:
+                return "intentionally_allowed_transport_or_player_chat"
+            if not policy:
+                return "not_intercepted"
+            if simple in allowed:
+                return "development_passthrough_allowlist"
+            if simple in handled:
+                return "development_handler_or_explicit_suppression"
+            return "development_unknown_path_disconnect"
+
         result = {
             "minecraft": "26.3",
             "method": "Lexical class references excluding imports; not a complete send-path audit.",
             "protection_active": False,
-            "packets": [{"class": n[:-5].replace("/", "."), "runtime_status": "not_intercepted",
+            "admission": "closed; development Connection boundary only",
+            "coverage_note": "Static policy classification is not runtime observation or complete protection evidence.",
+            "packets": [{"class": n[:-5].replace("/", "."), "runtime_status": status(n),
                          "referenced_by": references[n.rsplit("/", 1)[-1][:-5]]} for n in packets],
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2) + "\n")
-        print(f"Inventoried {len(packets)} outgoing packet classes; all marked not_intercepted")
+        print(f"Inventoried {len(packets)} outgoing packet classes; protection active: false")
 
 
 if __name__ == "__main__":
