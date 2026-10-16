@@ -3,7 +3,7 @@
   "id": "blindstone",
   "version": "${version}",
   "name": "Blindstone",
-  "description": "Development integration spike for per-viewer underground concealment. Not ready for player use.",
+  "description": "Server-side private alpha for per-viewer underground block, air, light, and non-player entity concealment.",
   "authors": ["Evan Chubbuck"],
   "environment": "server",
   "mixins": ["blindstone.mixins.json"],

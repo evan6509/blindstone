@@ -14,7 +14,7 @@ import java.util.Objects;
 
 /** Local aggregate diagnostics. Deliberately accepts no identities, positions, seeds, payloads, or exception messages. */
 public final class BlindstoneDiagnostics {
-    public enum Activation { DEVELOPMENT_ONLY, REFUSED, ENFORCING }
+    public enum Activation { DEVELOPMENT_ONLY, REFUSED, ENFORCING, DISABLED_BY_CONSOLE }
     public enum PacketPath { CHUNK_DATA, BLOCK_UPDATES, BLOCK_ENTITIES, LIGHTING, ENTITY_TRACKING,
         ENTITY_REFERENCES, SECONDARY_EVENTS, COMPOUND_PACKETS, SOUNDS, BUNDLES, DIRECT_CONNECTION }
     public enum Subsystem { CONFIGURATION, GEOMETRY, CHUNK_FILTER, LIGHTING, BLOCK_UPDATES, BLOCK_ENTITIES,
@@ -79,7 +79,7 @@ public final class BlindstoneDiagnostics {
     }
 
     public synchronized String status(EffectiveConfig config) {
-        return "Blindstone " + activation + "; player admission " + (activation == Activation.ENFORCING ? "requires readiness gate" : "DENIED")
+        return "Blindstone " + activation + "; player admission " + admissionState()
                 + "; " + config.settings().dimensions().getFirst() + " Y[" + config.policy().minY() + "," + config.policy().maxY() + ")"
                 + "; viewers=" + activeViewers + "; tracked chunks=" + trackedChunks + "; backlog=" + backlog
                 + "; recorded failures=" + failureCount() + ". Versions: mod " + versions.mod() + " / Minecraft " + versions.minecraft()
@@ -103,7 +103,7 @@ public final class BlindstoneDiagnostics {
         JsonObject report = new JsonObject();
         report.addProperty("reportSchema", 1);
         report.addProperty("activation", activation.name());
-        report.addProperty("admission", activation == Activation.ENFORCING ? "REQUIRES_READINESS_GATE" : "DENIED");
+        report.addProperty("admission", admissionState());
         report.addProperty("evidenceNotice", "Hook loading, observation, enforcement, automated tests, and live tests are independent evidence.");
         var gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
         report.add("versions", gson.toJsonTree(versions));
@@ -131,6 +131,14 @@ public final class BlindstoneDiagnostics {
             Files.writeString(temporary, contents, StandardCharsets.UTF_8);
             Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } finally { Files.deleteIfExists(temporary); }
+    }
+
+    private String admissionState() {
+        return switch (activation) {
+            case ENFORCING -> "OPEN";
+            case DISABLED_BY_CONSOLE -> "UNFILTERED_BY_CONSOLE";
+            default -> "DENIED";
+        };
     }
 
     private long failureCount() {

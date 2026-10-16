@@ -38,6 +38,12 @@ loom {
         blindstone_tests { sourceSet sourceSets.gametest }
     }
     runs {
+        smoke {
+            server()
+            name 'Blindstone normal private-alpha server'
+            source sourceSets.main
+            runDir 'build/smoke'
+        }
         gametest {
             server()
             name 'Blindstone isolated integration tests'
@@ -49,3 +55,5 @@ loom {
         }
     }
 }
+
+tasks.named('runSmoke') { standardInput = System.in }

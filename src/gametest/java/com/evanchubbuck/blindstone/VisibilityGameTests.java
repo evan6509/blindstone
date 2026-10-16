@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -239,11 +240,107 @@ public final class VisibilityGameTests {
             for (int slice = 0; slice < 16 && job.completedCandidates() <= before; slice++) job.step(1, 1);
             check(helper, job.completedCandidates() > before, "The retained job must continue beyond its prior nearest prefix");
             check(helper, job.intersectsChanged(new BlockPos(11, 1, 0)), "Neighbor-dependent shapes include a one-cell change halo outside the frozen bounds");
+            check(helper, !job.intersectsChanged(new ChunkPos(100, 100)) && job.intersectsChanged(new ChunkPos(-1, 0)),
+                    "Remote chunk generation must preserve jobs while negative-coordinate chunks intersecting the captured halo invalidate them");
             runtime.geometryChanged(helper.getLevel(), new BlockPos(2, 1, 0));
             check(helper, jobField.get(session) == null, "A door/wall change inside captured geometry must reject the stale in-flight job");
+            jobField.set(session, job);
+            runtime.reset(player);
+            check(helper, jobField.get(session) == null, "An accepted teleport/respawn reset cannot reuse a job from the prior origin");
         } finally {
             runtime.remove(player);
             player.discard();
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void fastFallingAndElytraPathsKeepTheirThinExplicitSafetyEnvelope(GameTestHelper helper) {
+        AABB fallen = new AABB(0.2, -8, 0.2, 0.8, -6.2, 0.8);
+        var fall = new VisibilityEvaluator.SafetyInput(java.util.List.of(new VisibilityEvaluator.BodyPath(fallen, fallen.move(0, 8, 0))), 16);
+        var available = GeometrySnapshot.availability(new BlockPos(-1, -9, -1), new BlockPos(10, 4, 1), pos -> true);
+        var result = VisibilityEvaluator.evaluateSafety(available, fall, POLICY);
+        check(helper, result.safetyComplete() && revealed(result, new BlockPos(0, -4, 0)),
+                "An accepted eight-block fall must restore its swept body path");
+        check(helper, !revealed(result, new BlockPos(2, -4, 0)), "Fast falling cannot reveal a neighboring room through a distance bubble");
+        AABB gliding = new AABB(8.2, 1, 0.2, 8.8, 1.6, 0.8);
+        var flight = new VisibilityEvaluator.SafetyInput(java.util.List.of(new VisibilityEvaluator.BodyPath(gliding, gliding.move(-8, 0, 0))), 16);
+        result = VisibilityEvaluator.evaluateSafety(available, flight, POLICY);
+        check(helper, result.safetyComplete() && revealed(result, new BlockPos(4, 1, 0)),
+                "Accepted fast gliding must restore the traveled body corridor");
+        check(helper, !revealed(result, new BlockPos(4, 1, 1)), "Flight safety remains body-width rather than an expanded through-wall radius");
+        var capped = new VisibilityEvaluator.SafetyInput(flight.bodies(), 2);
+        check(helper, VisibilityEvaluator.safetySnapshotBlockBound(capped) == Integer.MAX_VALUE
+                && !VisibilityEvaluator.evaluateSafety(available, capped, POLICY).safetyComplete(),
+                "Movement beyond the administrator's explicit accepted cap must be rejected before capture");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void boatAndMinecartSafetyIncludesBothVanillaVehicleAndRiderBodies(GameTestHelper helper) {
+        var available = GeometrySnapshot.availability(new BlockPos(-2, -1, -2), new BlockPos(11, 4, 2), pos -> true);
+        for (var type : java.util.List.of(EntityTypes.OAK_BOAT, EntityTypes.MINECART)) {
+            AABB vehicle = type.getDimensions().makeBoundingBox(new Vec3(8.5, 0, 0.5));
+            AABB rider = new AABB(8.2, 0.6, 0.2, 8.8, 2.4, 0.8);
+            var input = new VisibilityEvaluator.SafetyInput(java.util.List.of(
+                    new VisibilityEvaluator.BodyPath(rider, rider.move(-8, 0, 0)),
+                    new VisibilityEvaluator.BodyPath(vehicle, vehicle.move(-8, 0, 0))), 16);
+            var result = VisibilityEvaluator.evaluateSafety(available, input, POLICY);
+            check(helper, result.safetyComplete(), "Vanilla vehicle dimensions must fit the explicit body safety bounds: " + type);
+            check(helper, revealed(result, new BlockPos(4, 0, -1)), "The vehicle's actual width must restore cells outside the rider's narrow body");
+            check(helper, revealed(result, new BlockPos(4, 2, 0)), "The rider's upper body must also remain unobstructed");
+            check(helper, !revealed(result, new BlockPos(4, 1, 2)), "A mounted path must not reveal neighboring sealed rooms beyond both bodies");
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void rebasedTeleportSafetyCopiesOnlyDestinationAndCannotAuthorizeSight(GameTestHelper helper) {
+        AABB destination = new AABB(128.2, 0, 0.2, 128.8, 1.8, 0.8);
+        var input = VisibilityEvaluator.rebaseSafety(java.util.List.of(destination), 16);
+        var available = GeometrySnapshot.availability(new BlockPos(128, -1, 0), new BlockPos(128, 1, 0), pos -> true);
+        var result = VisibilityEvaluator.evaluateSafety(available, input, POLICY);
+        check(helper, result.safetyComplete() && revealed(result, new BlockPos(128, 1, 0)), "Accepted teleport rebase restores destination body cells");
+        check(helper, !revealed(result, new BlockPos(64, 1, 0)) && !revealed(result, new BlockPos(0, 1, 0)),
+                "Teleport rebasing must never disclose the intervening corridor or old origin");
+        check(helper, VisibilityEvaluator.safetySnapshotBlockBound(input) <= 8,
+                "Stationary destination safety must copy only a handful of availability cells");
+        boolean rejected = false;
+        try { VisibilityEvaluator.clearSight(available, new Vec3(128.5, 1.5, 0.5), new Vec3(128.5, 1.6, 0.5), 256); }
+        catch (IllegalArgumentException expected) { rejected = true; }
+        check(helper, rejected, "Availability-only body snapshots cannot accidentally turn opaque walls into transparent sight geometry");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void thirdPersonUsesAllTwentySixDirectionsAndClipsCamerasBeforeWalls(GameTestHelper helper) {
+        var clearGeometry = snapshot(new HashMap<>());
+        var clear = VisibilityEvaluator.createJob(clearGeometry, viewpoint(true), POLICY, 1);
+        clear.step(10_000, 1_000_000);
+        check(helper, clear.done() && clear.cameraOrigins().size() == 27, "Open geometry must admit the eye plus all 26 axis/diagonal camera directions");
+        check(helper, clear.cameraOrigins().stream().anyMatch(pos -> Math.abs(pos.x - 0.5) > 1
+                && Math.abs(pos.y - 1.62) > 1 && Math.abs(pos.z - 0.5) > 1), "Three-axis diagonal third-person positions must be evaluated");
+        var wallGeometry = snapshot(wall(Blocks.STONE.defaultBlockState()));
+        var clipped = VisibilityEvaluator.createJob(wallGeometry, viewpoint(true), POLICY, 4);
+        clipped.step(10_000, 1_000_000);
+        Vec3 eyes = viewpoint(true).eyes();
+        check(helper, clipped.cameraOrigins().stream().anyMatch(pos -> pos.x > 1.5 && pos.x < 2
+                && Math.abs(pos.y - eyes.y) < 1.0E-8 && Math.abs(pos.z - eyes.z) < 1.0E-8),
+                "A camera near a wall should clip inward to its clear path instead of disappearing entirely");
+        for (Vec3 camera : clipped.cameraOrigins()) {
+            check(helper, camera.x < 2 && VisibilityEvaluator.clearCameraPath(wallGeometry, eyes, camera, 256).clear(),
+                    "Every admitted clipped camera must retain a collision- and sight-clear path from accepted eyes");
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void animatedStorageLidsConservativelyOccludeTheirNeighboringCell(GameTestHelper helper) {
+        for (BlockState state : new BlockState[] {Blocks.CHEST.defaultBlockState(), Blocks.SHULKER_BOX.defaultBlockState()}) {
+            Map<BlockPos, BlockState> world = new HashMap<>();
+            world.put(new BlockPos(3, 0, 0), state);
+            check(helper, !VisibilityEvaluator.clearSight(snapshot(world), viewpoint(false).eyes(), new Vec3(5.5, 1.5, 0.5), 256).clear(),
+                    "A potentially animated storage lid cannot leak through the neighboring cell above its owner: " + state);
         }
         helper.succeed();
     }

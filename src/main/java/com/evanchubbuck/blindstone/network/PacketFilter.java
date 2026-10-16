@@ -5,6 +5,7 @@ import com.evanchubbuck.blindstone.ConcealmentPolicy;
 import com.evanchubbuck.blindstone.SectionVisibility;
 import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
@@ -13,17 +14,18 @@ import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.core.particles.ExplosionParticleInfo;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.syncher.EntityDataSerializer;
-import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.custom.BrandPayload;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.random.WeightedList;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.PositionPath;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -32,10 +34,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Vanilla 26.3 packet boundary. No input packet, shared chunk, or input light array is mutated.
- * This is an experimental, fail-closed filter: light is deliberately dark at EVERY section,
- * including unprotected and neighboring boundary sections. This prevents copied hidden light
- * from escaping at the cost of incorrect lighting. Production admission must remain disabled
- * until filtered-world light reconstruction and client gameplay validation exist.
+ * Chunk and light publication requires a prepared coherent viewer-light provider. Unsupported
+ * payload/entity schemas fail closed; no protected packet falls back to original world data.
  */
 public final class PacketFilter {
     private PacketFilter() { }
@@ -54,6 +54,8 @@ public final class PacketFilter {
         default boolean isEntityKnown(int entityId) { return isEntityVisible(entityId); }
         default void entitySpawned(int entityId) { }
         default void entityRemoved(int entityId) { }
+        /** Coherent viewer-filtered lighting must be prepared before chunk/light publication. */
+        default ClientboundLightUpdatePacketData light(ChunkPos chunk) { throw new IllegalStateException("Filtered lighting is not ready"); }
     }
 
     /* Explicit 26.3 class identities. Unknown/custom packets are dropped, never implicitly allowed. */
@@ -102,23 +104,6 @@ public final class PacketFilter {
             net.minecraft.network.protocol.common.ClientboundDisconnectPacket.class,
             net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket.class);
 
-    /* These vanilla serializers cannot encode block positions, particle destinations, or entity ids.
-       INT/LONG/OPTIONAL_UNSIGNED_INT are deliberately absent: semantics depend on entity+field. */
-    private static final Set<EntityDataSerializer<?>> SAFE_VISIBLE_METADATA = Set.of(
-            EntityDataSerializers.BYTE, EntityDataSerializers.FLOAT, EntityDataSerializers.STRING,
-            EntityDataSerializers.BOOLEAN, EntityDataSerializers.ROTATIONS, EntityDataSerializers.DIRECTION,
-            EntityDataSerializers.POSE, EntityDataSerializers.VILLAGER_DATA,
-            EntityDataSerializers.CAT_VARIANT, EntityDataSerializers.CAT_SOUND_VARIANT,
-            EntityDataSerializers.CHICKEN_VARIANT, EntityDataSerializers.CHICKEN_SOUND_VARIANT,
-            EntityDataSerializers.COW_VARIANT, EntityDataSerializers.COW_SOUND_VARIANT,
-            EntityDataSerializers.WOLF_VARIANT, EntityDataSerializers.WOLF_SOUND_VARIANT,
-            EntityDataSerializers.FROG_VARIANT, EntityDataSerializers.PIG_VARIANT,
-            EntityDataSerializers.PIG_SOUND_VARIANT, EntityDataSerializers.ZOMBIE_NAUTILUS_VARIANT,
-            EntityDataSerializers.PAINTING_VARIANT, EntityDataSerializers.ARMADILLO_STATE,
-            EntityDataSerializers.SNIFFER_STATE, EntityDataSerializers.WEATHERING_COPPER_STATE,
-            EntityDataSerializers.COPPER_GOLEM_STATE, EntityDataSerializers.HUMANOID_ARM,
-            EntityDataSerializers.DYE_COLOR);
-
     /** Returns a safe replacement, the unchanged safe packet, or null to suppress. */
     public static @Nullable Packet<?> filter(Packet<?> packet, Context context) {
         if (!context.level().getServer().isSameThread()) {
@@ -135,7 +120,7 @@ public final class PacketFilter {
             return chunk(source, context);
         }
         if (packet instanceof ClientboundLightUpdatePacket light) {
-            return new ClientboundLightUpdatePacket(light.x(), light.z(), darkLight(context.level()));
+            return new ClientboundLightUpdatePacket(light.x(), light.z(), context.light(new ChunkPos(light.x(), light.z())));
         }
         if (packet instanceof ClientboundBlockUpdatePacket update) {
             return new ClientboundBlockUpdatePacket(update.getPos().immutable(), authorized(context, update.getPos())
@@ -151,9 +136,8 @@ public final class PacketFilter {
         if (packet instanceof ClientboundLevelEventPacket event) return authorized(context, event.getPos()) ? packet : null;
         if (packet instanceof ClientboundOpenSignEditorPacket sign) return authorized(context, sign.pos()) ? packet : null;
         if (packet instanceof ClientboundLevelParticlesPacket particles) {
-            // Compound options can carry a hidden destination/entity (e.g. vibration/trail), not just an origin.
-            return particles.particle() instanceof SimpleParticleType
-                    && authorized(context, BlockPos.containing(particles.x(), particles.y(), particles.z())) ? packet : null;
+            return authorized(context, BlockPos.containing(particles.x(), particles.y(), particles.z()))
+                    && EntityPolicy.particle(particles.particle(), context) != null ? packet : null;
         }
         if (packet instanceof ClientboundExplodePacket explosion) return explosion(explosion, context);
         if (packet instanceof ClientboundSoundEntityPacket sound) {
@@ -162,27 +146,8 @@ public final class PacketFilter {
             return entity == null ? null : new ClientboundSoundPacket(sound.getSound(), sound.getSource(),
                     entity.getX(), entity.getY(), entity.getZ(), sound.getVolume(), sound.getPitch(), sound.getSeed());
         }
-        if (packet instanceof ClientboundAddEntityPacket spawn) {
-            Entity source = context.level().getEntity(spawn.getId());
-            if (source == null || source.getType() != spawn.getType() || !source.getUUID().equals(spawn.getUUID())
-                    || !context.maySpawnEntity(spawn.getId())) return null;
-            if (!context.isPlayerEntity(spawn.getId())
-                    && !authorized(context, BlockPos.containing(spawn.getX(), spawn.getY(), spawn.getZ()))) return null;
-            context.entitySpawned(spawn.getId());
-            if (context.isPlayerEntity(spawn.getId())) return packet;
-            // Some vanilla spawn data fields encode an owner entity id. Neutralizing all data is safe
-            // but breaks item-frame direction, falling-block appearance, etc.; re-pair on reveal remains
-            // experimental until each type's spawn-data semantics has a dedicated adapter.
-            return new ClientboundAddEntityPacket(spawn.getId(), spawn.getUUID(), spawn.getX(), spawn.getY(), spawn.getZ(),
-                    spawn.getXRot(), spawn.getYRot(), spawn.getType(), 0, spawn.getMovement(), spawn.getYHeadRot());
-        }
-        if (packet instanceof ClientboundSetEntityDataPacket metadata) {
-            if (!context.isEntityVisible(metadata.id())) return null;
-            if (context.isPlayerEntity(metadata.id())) return packet;
-            var values = metadata.packedItems().stream()
-                    .filter(value -> SAFE_VISIBLE_METADATA.contains(value.serializer())).toList();
-            return values.isEmpty() ? null : new ClientboundSetEntityDataPacket(metadata.id(), values);
-        }
+        if (packet instanceof ClientboundAddEntityPacket spawn) return EntityPolicy.spawn(spawn, context);
+        if (packet instanceof ClientboundSetEntityDataPacket metadata) return EntityPolicy.metadata(metadata, context);
         if (packet instanceof ClientboundRemoveEntitiesPacket removals) {
             var known = new IntArrayList();
             for (int id : removals.entityIds()) {
@@ -193,11 +158,12 @@ public final class PacketFilter {
         if (packet instanceof ClientboundTeleportEntityPacket movement) {
             if (!context.isEntityVisible(movement.id())) return null;
             if (context.isPlayerEntity(movement.id())) return packet;
-            // Relative coordinates need the viewer's exact prior base, which this prototype does
-            // not track. Never interpret a relative vector as a world position.
-            if (movement.relatives().contains(Relative.X) || movement.relatives().contains(Relative.Y)
-                    || movement.relatives().contains(Relative.Z)) return null;
-            return authorized(context, BlockPos.containing(movement.change().position())) ? packet : null;
+            Entity source = context.level().getEntity(movement.id());
+            if (source == null || !authorized(context, source.blockPosition())) return null;
+            // The server entity already has its accepted destination. Do not add a relative
+            // change to that destination or rely on an unknown client's previous interpolation base.
+            return new ClientboundTeleportEntityPacket(source.getId(), new PositionMoveRotation(source.position(),
+                    source.getDeltaMovement(), source.getYRot(), source.getXRot()), Set.of(), movement.onGround());
         }
         if (packet instanceof ClientboundEntityPositionSyncPacket movement) {
             if (!context.isEntityVisible(movement.id())) return null;
@@ -216,12 +182,21 @@ public final class PacketFilter {
         }
         if (packet instanceof ClientboundSetPassengersPacket passengers) {
             if (!context.isEntityVisible(passengers.getVehicle())) return null;
-            for (int id : passengers.getPassengers()) if (!context.isEntityVisible(id)) return null;
-            return packet;
+            var visible = new IntArrayList();
+            for (int id : passengers.getPassengers()) if (context.isEntityVisible(id)) visible.add(id);
+            if (visible.size() == passengers.getPassengers().length) return packet;
+            var buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                buffer.writeVarInt(passengers.getVehicle());
+                buffer.writeVarIntArray(visible.toIntArray());
+                return ClientboundSetPassengersPacket.STREAM_CODEC.decode(buffer);
+            } finally { buffer.release(); }
         }
         if (packet instanceof ClientboundSetEntityLinkPacket link) {
-            return context.isEntityVisible(link.getSourceId())
-                    && (link.getDestId() == 0 || context.isEntityVisible(link.getDestId())) ? packet : null;
+            if (!context.isEntityVisible(link.getSourceId())) return null;
+            if (link.getDestId() == 0 || context.isEntityVisible(link.getDestId())) return packet;
+            Entity source = context.level().getEntity(link.getSourceId());
+            return source == null ? null : new ClientboundSetEntityLinkPacket(source, null);
         }
         if (packet instanceof ClientboundTakeItemEntityPacket pickup) {
             return context.isEntityVisible(pickup.getItemId()) && context.isEntityVisible(pickup.getPlayerId()) ? packet : null;
@@ -235,6 +210,17 @@ public final class PacketFilter {
         }
         int entityId = entityId(packet, context.level());
         if (entityId != Integer.MIN_VALUE) return context.isEntityVisible(entityId) ? packet : null;
+        if (packet instanceof ClientboundCustomPayloadPacket custom) {
+            var payload = custom.payload();
+            // Vanilla brand and Fabric's bounded channel/version negotiation have no world fields.
+            if (payload instanceof BrandPayload
+                    || payload instanceof net.fabricmc.fabric.impl.networking.RegistrationPayload registration
+                        && (registration.type().equals(net.fabricmc.fabric.impl.networking.RegistrationPayload.REGISTER)
+                            || registration.type().equals(net.fabricmc.fabric.impl.networking.RegistrationPayload.UNREGISTER))
+                    || payload instanceof net.fabricmc.fabric.impl.networking.CommonRegisterPayload
+                    || payload instanceof net.fabricmc.fabric.impl.networking.CommonVersionPayload) return packet;
+            throw new IllegalStateException("Unsupported custom gameplay payload");
+        }
         // Debug, tag-query, waypoint, player-look-at, and custom payload paths intentionally fail closed.
         if (PASSTHROUGH.contains(packet.getClass())) return packet;
         if (packet instanceof ClientboundDebugBlockValuePacket || packet instanceof ClientboundDebugChunkValuePacket
@@ -247,8 +233,12 @@ public final class PacketFilter {
     }
 
     public static ClientboundLevelChunkWithLightPacket chunk(LevelChunk source, Context context) {
+        return filterChunk(source, context);
+    }
+
+    public static ClientboundLevelChunkWithLightPacket filterChunk(LevelChunk source, Context context) {
         return new ClientboundLevelChunkWithLightPacket(source.getPos().x(), source.getPos().z(),
-                ChunkFilter.snapshot(source, context.policy(), context.masks(source.getPos())), darkLight(context.level()));
+                ChunkFilter.snapshot(source, context.policy(), context.masks(source.getPos())), context.light(source.getPos()));
     }
 
     /** Independent masks for every vanilla light section, including the extra sections at both ends. */
@@ -281,13 +271,33 @@ public final class PacketFilter {
 
     private static Packet<?> explosion(ClientboundExplodePacket source, Context context) {
         boolean visible = authorized(context, BlockPos.containing(source.center()));
-        var safe = new ClientboundExplodePacket(visible ? source.center() : context.viewerPosition(), 0, 0,
-                source.playerKnockback(), ParticleTypes.EXPLOSION, source.explosionSound(), WeightedList.of(),
+        var centerParticle = visible ? EntityPolicy.particle(source.explosionParticle(), context) : null;
+        boolean fullFootprint = visible && explosionFootprintAuthorized(source, context);
+        var particles = WeightedList.<ExplosionParticleInfo>builder();
+        if (fullFootprint) for (var weighted : source.blockParticles().unwrap()) {
+            if (EntityPolicy.particle(weighted.value().particle(), context) != null)
+                particles.add(weighted.value(), weighted.weight());
+        }
+        var safe = new ClientboundExplodePacket(visible ? source.center() : context.viewerPosition(), visible ? source.radius() : 0,
+                fullFootprint ? source.blockCount() : 0, source.playerKnockback(),
+                centerParticle == null ? ParticleTypes.EXPLOSION : centerParticle, source.explosionSound(), particles.build(),
                 visible && source.playSound());
         if (visible || !source.playSound()) return safe;
         var sound = new ClientboundSoundPacket(source.explosionSound(), SoundSource.BLOCKS,
                 source.center().x(), source.center().y(), source.center().z(), 4.0F, 0.7F, 0);
         return new ClientboundBundlePacket(List.of(safe, sound));
+    }
+
+    private static boolean explosionFootprintAuthorized(ClientboundExplodePacket source, Context context) {
+        double radius = source.radius();
+        if (!Double.isFinite(radius) || radius < 0 || radius > 7) return false;
+        int minX = (int) Math.floor(source.center().x() - radius), maxX = (int) Math.floor(source.center().x() + radius);
+        int minY = (int) Math.floor(source.center().y() - radius), maxY = (int) Math.floor(source.center().y() + radius);
+        int minZ = (int) Math.floor(source.center().z() - radius), maxZ = (int) Math.floor(source.center().z() + radius);
+        if ((long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 4096) return false;
+        for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) for (int x = minX; x <= maxX; x++)
+            if (!authorized(context, new BlockPos(x, y, z))) return false;
+        return true;
     }
 
     private static int entityId(Packet<?> packet, ServerLevel level) {

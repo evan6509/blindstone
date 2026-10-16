@@ -1,36 +1,43 @@
-# Development pipeline status
+# Private-alpha implementation
 
-This checkpoint extends the isolated chunk-data spike into a closed-admission server pipeline. Normal initialization still refuses activation; `-Dblindstone.development=true` permits GameTests/console development, with mandatory login denial. It is not a public protection release.
+`0.1.0-alpha.1` permits normal dedicated-server startup and ordinary player admission after mandatory transformed hooks and configuration validate. Isolated `blindstone.development` runs keep admission closed. The alpha's runnable pipeline and its acceptance evidence are separate; [TEST_REPORT.md](TEST_REPORT.md) records observed results.
 
-## Implemented
+## World views and visibility
 
-- `ChunkFilter` creates detached per-viewer block/air sections with rebuilt palettes, non-air/fluid counts, initial block-entity entries and heightmaps. World blocks, saved chunks and simulation are never replaced by fake terrain.
-- `GeometrySnapshot` freezes loaded-only block shapes and cells. Missing cells are opaque; world capture stays on the owning server thread.
-- `VisibilityEvaluator` authorizes individual cells with clear paths, first surfaces and fixed samples. It tests all directions, transparent/partial blocks, water/lava, doors, powder snow and conservative moving-piston geometry. Camera offsets require both sight and collision clearance.
-- Resumable sight jobs retain camera, sample, voxel and shape-box cursors across work slices. Even a one-unit work budget makes progress. Geometry changes invalidate intersecting snapshots and their one-block shape halo; remote activity does not restart unrelated scans.
-- Movement safety reveals cells intersecting the accepted body expanded by exactly 1/16 block and its swept path. Movement segments above 1.5 blocks, unsupported body sizes and mounted travel fail closed. This small body envelope is the explicit through-wall disclosure; it never expands under load.
-- `ViewerState` separates queued authorization from delivered masks. Runtime tracking, accepted position/respawn/configuration transitions, unloads and geometry changes invalidate work. Same-dimension teleports retain subscriptions with fresh masks/ticket owners; entity IDs remain known until removal so transitions can remove already spawned entities.
-- A mandatory `Connection.sendPacket` wrapper handles listener sends, direct sends and pending actions before event-loop dispatch. It preserves callback/flush behavior and constructs isolated output. World packets from worker threads and unknown payload routes fail closed.
-- The packet policy handles full chunk data, block/section corrections, initial/later block entities, recursive bundles, secondary events, entity references, selected metadata, movement paths and ordinary sound conversion. Its deliberate visual/gameplay restrictions are listed below and in the coverage document.
-- `ChunkMap` pairing includes per-viewer visibility. Bounded rotating refresh handles visibility changes without section movement; tracker failures disconnect an affected viewer instead of escaping through the world tick.
-- Strict immutable configuration validates dimensions, bounds, required air/entity concealment, replacements and budgets. Default creation/report writes use atomic moves. Reload validates before publication and currently refuses active viewers.
-- Local status/verify/inspect/reload/report commands expose sanitized counters and separate loaded, observed, filtered, enforced, automated and live evidence. There is no bypass from operator status and no telemetry/updater.
+`ChunkFilter` creates detached per-viewer sections and rebuilds palettes, non-air/fluid counts, initial block-entity entries and client heightmaps. It never installs fake states in live chunks or changes saved terrain, inventories, collisions, generation or mob behavior.
 
-## Lighting work
+`GeometrySnapshot` captures loaded cells and shapes on the owning server thread. Missing cells are opaque. Resumable visibility jobs test individual candidates in every direction using clear paths and first surfaces. Third-person camera offsets must themselves be reachable without crossing geometry. Fixed candidate samples and finite camera offsets are conservative coverage choices; smooth rendering through every tiny opening still needs client validation.
 
-`network.FilteredLight` reconstructs sky and block light from filtered states, with a 15-block horizontal halo, unknown opaque cells, vanilla face occlusion/dampening, and explicit allocation/work/time budgets. It does not copy real light arrays or read concealed states. Its isolated solver/codec tests are separate from the packet pipeline.
+Viewer state separates pending authorization from delivered masks. Chunk/session revisions prevent replaced work, geometry changes, unloads, teleports, dimension changes and configuration changes from authorizing stale output. Knowledge accumulates within a tracking session and is recomputed after unload.
 
-The outgoing packet policy still uses **constant darkness in every light section**, including above the protection cutoff, to avoid hidden-source boundary leaks. The reconstructed solver is not yet integrated: its cost requires resumable scheduling, per-viewer caching/invalidation, neighboring-chunk consistency and coherent publication with block reveals. Combining real light with filtered blocks is not an acceptable fallback.
+The accepted body, supported root-vehicle body and swept path receive a fixed 1/16-block safety margin. The straight sweep between accepted endpoints uses the same margin at any supported speed; it does not reconstruct intermediate axis-resolved movement bends. Bounds on bodies, path distance and scanned cells fail closed when exceeded. A body cell may expose information just across a wall; this is the documented movement-safety exception.
 
-## Remaining gameplay and release blockers
+## Lighting and coherent delivery
 
-1. Integrate bounded reconstructed lighting and measure the delay/cost of first chunks and reveal updates. Complete client heightmap updates during incremental reveals.
-2. Complete type-specific entity spawn data and metadata adapters. Current integer/reference/item-stack/particle/complex metadata restrictions break normal non-player appearance/behavior; neutral spawn data affects frames, falling blocks and projectiles. Relative non-player teleport reconstruction and mixed passenger transitions still need full support.
-3. Complete compound particle adapters, supported vanilla debug/waypoint/query policies and compatibility payloads. Unknown custom packets currently disconnect; ordinary sounds intentionally remain location clues.
-4. Validate/extend diagonal third-person views and tiny openings. Camera positions currently sample six axis offsets; visibility samples center plus six face centers. These are conservative coverage limits, not evidence of smooth live rendering.
-5. Add supported vehicle envelopes and fast-travel destination handling, coherent online configuration changes and console-only manual disable/refresh. No disable/unfiltered fallback is provided at this development stage.
-6. Harden systematic hook-readiness and recovery classification. The systemic-failure latch exists; fault injection and end-to-end coverage must prove each required route and recovery behavior.
-7. Capture decoded outgoing traffic for two real clients. Test ordinary clients, minimaps, X-ray/freecam/ESP, profiler comparisons, movement, mining, combat, life-cycle transitions and failure scenarios from the specification.
-8. Benchmark an explicit SMP load and advertised optimization stacks. The provisional 5 ms work target is checked at safe stage/packet boundaries; capture, shape construction and one bounded solver step can overshoot internally. No latency, tick percentile, memory-capacity or compatibility claim is established.
+`LightScheduler` captures filtered states cooperatively, reconstructs sky/block light and caches output by viewer/chunk generation. Jobs use a 15-block horizontal halo, vanilla face occlusion and dampening, authorized emission only, and bounded duplicate-suppressed propagation queues. Missing neighboring chunks are opaque. Global light-job/cache accounting is capped at 128 MiB; active jobs and ready entries also have per-viewer caps.
 
-Keep player admission blocked until the normal-play policies and evidence gates are complete. Player ESP, already downloaded terrain, normal audible activity, surface clues and seed information remain outside the intended concealment guarantee.
+A fully concealed neighborhood has analytically solid protected sections, so initial lighting solves only the public boundary band. If any protected section is authorized in the halo, the computed region extends down to its lowest authorized section. Outside-world air is included where needed at build boundaries.
+
+Upper real light is copied only for complete sections at **Y≥protectedMaxY+16**. Every upward light step loses at least one level and vanilla light levels are at most 15. Hidden blocks and sources below the exclusive cutoff therefore cannot influence that upper region. Unattenuated direct skylight travels downward, so it does not invalidate this bound. Safe upper-boundary light seeds the reconstructed lower band, preserving ordinary sunlight and mountain shadows without copying hidden-derived light into protected space.
+
+Chunk batches wait for matching light and frozen masks. New desired visibility is coalesced behind an in-progress plan rather than restarting it every tick. Geometry changes invalidate relevant jobs and their neighboring halos. Body safety may authorize additional cells immediately; publishing a frozen plan unions already-delivered body masks so a resend cannot restore fake walls over them. Additional disclosure can leave transient conservative under-lighting until the next matching light refresh, similar to an asynchronous light update; it cannot introduce a concealed source.
+
+## Packet, tracking and lifecycle boundary
+
+The mandatory wrapper at `Connection.sendPacket` covers listener sends, direct sends and queued actions before event-loop dispatch. It preserves completion callbacks and flush behavior. Protected-world access stays on the server thread; transport and player chat have an explicit non-world policy.
+
+Per-viewer entity pairing is refreshed even without section movement. Field adapters validate non-player spawn identity and type, metadata fields, references and compound positions. Player tracking remains normal. Hidden entities are not instantiated merely to play ordinary audible cues; those sounds become positional packets.
+
+Actual block mutations, chunk load/unload and full-chunk accessibility changes invalidate affected geometry and light. Teleports, respawns, dimensions and disconnects reset or rebuild the relevant viewer state. Reload validates a complete candidate before replacing configuration and invalidates work coherently. Console-only disable warns first, then disconnects current viewers so reconnecting clients receive an explicitly unfiltered world.
+
+Startup forces required target classes to transform and verifies their marker/accessor interfaces. Required mixins use `defaultRequire=1`. Missing hooks prevent normal activation/admission; later failures stop affected delivery instead of falling back to real concealed data. Marker presence is readiness evidence, not proof of gameplay or compatibility.
+
+## Acceptance work
+
+- Exercise ordinary graphical clients, third-person cameras, tiny openings, mining, doors, fluids, pistons, building, combat, vehicles, fast travel and dimension/respawn/rejoin flows.
+- Capture decoded views for two independent clients and adversarial minimap/X-ray/freecam/ESP clients; compare controlled present/absent profiler fixtures.
+- Validate supported entity classes and compound visual payloads against actual client behavior, including uncommon adapters and relationship transitions.
+- Benchmark named player/chunk/entity loads and publish first-chunk delay, reveal latency, memory use and tick percentiles. The default 15 ms instrumented-work guard is not a hard whole-server tick deadline.
+- Validate each optimization/alternate-send stack explicitly. Arbitrary payload schemas and direct channel writes are not covered by a vanilla class inventory.
+
+These are public-release acceptance gates. They do not require keeping the private alpha's ordinary startup disabled.

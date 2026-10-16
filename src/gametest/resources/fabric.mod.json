@@ -11,7 +11,9 @@
       "com.evanchubbuck.blindstone.PacketFilterGameTests",
       "com.evanchubbuck.blindstone.ConfigurationGameTests",
       "com.evanchubbuck.blindstone.RuntimeGameTests",
-      "com.evanchubbuck.blindstone.network.FilteredLightGameTests"
+      "com.evanchubbuck.blindstone.network.FilteredLightGameTests",
+      "com.evanchubbuck.blindstone.PlayableGameTests",
+      "com.evanchubbuck.blindstone.LiveConnectionGameTests"
     ]
   },
   "depends": {

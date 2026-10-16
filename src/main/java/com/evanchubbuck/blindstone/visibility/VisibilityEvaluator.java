@@ -23,15 +23,22 @@ public final class VisibilityEvaluator {
     public static final double CAMERA_HALF_WIDTH = 0.1;
     public static final double SAFETY_MARGIN = 1.0 / 16.0;
     public static final double MAX_MOVEMENT_SEGMENT = 1.5;
-    private static final int MAX_SAFETY_BLOCKS = 96;
+    public static final double DEFAULT_ACCEPTED_MOVEMENT = 16;
+    public static final double MAX_ACCEPTED_MOVEMENT = 24;
+    public static final int MAX_SAFETY_SCAN_CELLS = 8192;
     private static final double[][] SAMPLES = {
         {0.5, 0.5, 0.5}, {0.001, 0.5, 0.5}, {0.999, 0.5, 0.5},
         {0.5, 0.001, 0.5}, {0.5, 0.999, 0.5}, {0.5, 0.5, 0.001}, {0.5, 0.5, 0.999}
     };
-    private static final Vec3[] CAMERA_OFFSETS = {
-        new Vec3(4, 0, 0), new Vec3(-4, 0, 0), new Vec3(0, 4, 0),
-        new Vec3(0, -4, 0), new Vec3(0, 0, 4), new Vec3(0, 0, -4)
-    };
+    private static final Vec3[] CAMERA_OFFSETS = cameraOffsets();
+
+    private static Vec3[] cameraOffsets() {
+        List<Vec3> result = new ArrayList<>();
+        for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) for (int x = -1; x <= 1; x++) {
+            if ((x | y | z) != 0) result.add(new Vec3(x, y, z).normalize().scale(CAMERA_DISTANCE));
+        }
+        return result.toArray(Vec3[]::new);
+    }
 
     private VisibilityEvaluator() {}
 
@@ -94,10 +101,19 @@ public final class VisibilityEvaluator {
 
     /** Strict point sight for entities: the complete segment, including its end cell, must be clear. */
     public static SightResult clearSight(GeometrySnapshot geometry, Vec3 from, Vec3 to, int maxRayWork) {
+        return pointSight(geometry, from, to, maxRayWork, false);
+    }
+
+    public static SightResult clearCameraPath(GeometrySnapshot geometry, Vec3 from, Vec3 to, int maxRayWork) {
+        return pointSight(geometry, from, to, maxRayWork, true);
+    }
+
+    private static SightResult pointSight(GeometrySnapshot geometry, Vec3 from, Vec3 to, int maxRayWork, boolean collision) {
         checkPoints(from, to);
+        if (!geometry.hasSightGeometry()) throw new IllegalArgumentException("Availability-only body snapshot cannot authorize sight");
         if (maxRayWork < 1 || maxRayWork > 20_000_000) throw new IllegalArgumentException("Point sight work budget outside fixed bounds");
         Budget budget = new Budget(maxRayWork);
-        Ray status = new RayCursor(from, to, null, false).advance(geometry, budget);
+        Ray status = new RayCursor(from, to, null, collision).advance(geometry, budget);
         return new SightResult(status == Ray.CLEAR, status != Ray.EXHAUSTED && !budget.unavailable,
                 budget.used, geometry.blocks());
     }
@@ -121,19 +137,59 @@ public final class VisibilityEvaluator {
      */
     public static Result evaluate(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy,
             int range, int maxCandidates, int maxRayWork) {
-        return createJob(geometry, view, policy, range).step(maxCandidates, maxRayWork);
+        Result sight = createJob(geometry, view, policy, range).step(maxCandidates, maxRayWork);
+        Result movement = evaluateSafety(geometry, view, policy);
+        Map<Long, Map<Integer, SectionVisibility>> masks = new HashMap<>();
+        sight.chunks().forEach((chunk, sections) -> masks.put(chunk, new HashMap<>(sections)));
+        movement.chunks().forEach((chunk, sections) -> {
+            var target = masks.computeIfAbsent(chunk, ignored -> new HashMap<>());
+            sections.forEach((section, mask) -> target.merge(section, mask, SectionVisibility::union));
+        });
+        masks.replaceAll((chunk, sections) -> Map.copyOf(sections));
+        return new Result(Map.copyOf(masks), sight.complete() && movement.safetyComplete(), movement.safetyComplete(),
+                sight.candidates(), sight.rayWork(), sight.snapshotBlocks(), sight.unavailableBlocks());
     }
 
     public static Job createJob(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range) {
         checkRange(range);
+        if (!geometry.hasSightGeometry()) throw new IllegalArgumentException("Availability-only body snapshot cannot authorize sight");
         return new Job(geometry, view, policy, range);
     }
 
     /** Independently refresh this fixed body envelope each tick while an older sight job progresses. */
     public static Result evaluateSafety(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy) {
+        return evaluateSafety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), view.previousBody())), MAX_MOVEMENT_SEGMENT), policy);
+    }
+
+    public static Result evaluateSafety(GeometrySnapshot geometry, SafetyInput input, ConcealmentPolicy policy) {
         Map<Long, Map<Integer, BitSet>> bits = new HashMap<>();
-        boolean complete = safety(geometry, view, policy, bits);
+        boolean complete = safety(geometry, input, policy, bits);
         return result(geometry, bits, complete, complete, 0, 0);
+    }
+
+    /** Upper bound for copying accepted player/vehicle paths, independent of visibility range. */
+    public static int safetySnapshotBlockBound(SafetyInput input) {
+        SafetyBounds bounds = safetyBounds(input);
+        return bounds == null ? Integer.MAX_VALUE : bounds.blocks();
+    }
+
+    public static GeometrySnapshot captureSafety(ServerLevel level, SafetyInput input, int maxBlocks) {
+        SafetyBounds bounds = safetyBounds(input);
+        if (bounds == null || bounds.blocks() > maxBlocks || maxBlocks < 1)
+            throw new IllegalArgumentException("Accepted body path exceeds its fixed safety budget");
+        if (!level.getServer().isSameThread()) throw new IllegalStateException("Body availability must be captured on the server thread");
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        for (int z = bounds.min().getZ() >> 4; z <= bounds.max().getZ() >> 4; z++)
+            for (int x = bounds.min().getX() >> 4; x <= bounds.max().getX() >> 4; x++) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(x, z);
+                if (chunk != null) loaded.put(ChunkPos.pack(x, z), chunk);
+            }
+        return GeometrySnapshot.availability(bounds.min(), bounds.max(), pos -> level.isInsideBuildHeight(pos)
+                && loaded.containsKey(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4)));
+    }
+
+    public static SafetyInput rebaseSafety(List<AABB> acceptedBodies, double maxAcceptedSegment) {
+        return new SafetyInput(acceptedBodies.stream().map(body -> new BodyPath(body, null)).toList(), maxAcceptedSegment);
     }
 
     private static Result result(GeometrySnapshot geometry, Map<Long, Map<Integer, BitSet>> bits,
@@ -165,6 +221,8 @@ public final class VisibilityEvaluator {
         private boolean unavailable;
         private int cameraOffset;
         private int cameraCorner;
+        private double cameraDistance = CAMERA_DISTANCE;
+        private int cameraClips;
         private int candidate;
         private int origin;
         private int sample;
@@ -173,7 +231,7 @@ public final class VisibilityEvaluator {
         private Job(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range) {
             this.geometry = geometry;
             this.view = view;
-            safetyComplete = safety(geometry, view, policy, safetyBits);
+            safetyComplete = safety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), null)), MAX_MOVEMENT_SEGMENT), policy, safetyBits);
             origins.add(view.eyes());
             cameraOffset = view.thirdPerson() ? 0 : CAMERA_OFFSETS.length;
             BlockPos center = BlockPos.containing(view.eyes());
@@ -189,6 +247,8 @@ public final class VisibilityEvaluator {
         public int completedCandidates() { return candidate; }
         public int totalCandidates() { return candidates.size(); }
         public boolean intersectsChanged(BlockPos pos) { return geometry.intersectsChanged(pos); }
+        public boolean intersectsChanged(ChunkPos chunk) { return geometry.intersectsChanged(chunk); }
+        public List<Vec3> cameraOrigins() { return List.copyOf(origins); }
 
         public Result step(int maxCandidates, int maxRayWork) {
             if (maxCandidates < 1 || maxCandidates > 100_000 || maxRayWork < 1 || maxRayWork > 20_000_000)
@@ -202,7 +262,7 @@ public final class VisibilityEvaluator {
             });
             // Admit every explicit camera only after all nine clearance rays have completed.
             while (cameraOffset < CAMERA_OFFSETS.length) {
-                Vec3 camera = view.eyes().add(CAMERA_OFFSETS[cameraOffset]);
+                Vec3 camera = view.eyes().add(CAMERA_OFFSETS[cameraOffset].scale(cameraDistance / CAMERA_DISTANCE));
                 if (ray == null) {
                     Vec3 corner = cameraCorner == 8 ? Vec3.ZERO : new Vec3(
                             (cameraCorner & 1) == 0 ? -CAMERA_HALF_WIDTH : CAMERA_HALF_WIDTH,
@@ -212,15 +272,24 @@ public final class VisibilityEvaluator {
                 }
                 Ray status = ray.advance(geometry, budget);
                 if (status == Ray.EXHAUSTED) break;
+                double hitFraction = ray.blockedFraction;
                 ray = null;
-                if (status == Ray.BLOCKED) { cameraOffset++; cameraCorner = 0; }
-                else if (++cameraCorner == 9) { origins.add(camera); cameraOffset++; cameraCorner = 0; }
+                if (status == Ray.BLOCKED) {
+                    cameraDistance = Math.max(0, cameraDistance * hitFraction - 0.02);
+                    cameraCorner = 0;
+                    if (cameraDistance < 0.25 || ++cameraClips > 256) nextCamera();
+                } else if (++cameraCorner == 9) { origins.add(camera); nextCamera(); }
             }
             int checked = 0;
             while (cameraOffset == CAMERA_OFFSETS.length && candidate < candidates.size() && checked < maxCandidates) {
                 BlockPos pos = candidates.get(candidate);
                 if (geometry.cell(pos) == null) {
                     budget.unavailable = true;
+                    candidate++;
+                    checked++;
+                    continue;
+                }
+                if (geometry.enclosedSolid(pos)) {
                     candidate++;
                     checked++;
                     continue;
@@ -250,6 +319,13 @@ public final class VisibilityEvaluator {
             unavailable |= budget.unavailable;
             return result(geometry, bits, done() && !unavailable && safetyComplete, safetyComplete, checked, budget.used);
         }
+
+        private void nextCamera() {
+            cameraOffset++;
+            cameraCorner = 0;
+            cameraDistance = CAMERA_DISTANCE;
+            cameraClips = 0;
+        }
     }
 
     /** Voxel DDA with the same endpoint epsilon and axis tie order as vanilla traverseBlocks. */
@@ -264,6 +340,8 @@ public final class VisibilityEvaluator {
         private int x, y, z;
         private List<AABB> boxes;
         private int box;
+        private double entryFraction;
+        private double blockedFraction;
 
         private RayCursor(Vec3 from, Vec3 to, BlockPos target, boolean collision) {
             this.from = from;
@@ -290,7 +368,7 @@ public final class VisibilityEvaluator {
                     if (!budget.spend()) return Ray.EXHAUSTED;
                     BlockPos pos = new BlockPos(x, y, z);
                     GeometrySnapshot.Cell cell = geometry.cell(pos);
-                    if (cell == null) { budget.unavailable = true; return Ray.BLOCKED; }
+                    if (cell == null) { budget.unavailable = true; blockedFraction = entryFraction; return Ray.BLOCKED; }
                     if (pos.equals(target)) return Ray.CLEAR;
                     boxes = collision ? cell.collision() : cell.sight();
                     box = 0;
@@ -298,55 +376,90 @@ public final class VisibilityEvaluator {
                 while (box < boxes.size()) {
                     if (!budget.spend()) return Ray.EXHAUSTED;
                     AABB shape = boxes.get(box++);
-                    if (shape.contains(from) || shape.clip(from, to).isPresent()) return Ray.BLOCKED;
+                    double hit = hitFraction(shape, from, to, x, y, z);
+                    if (hit >= 0) { blockedFraction = hit; return Ray.BLOCKED; }
                 }
                 boxes = null;
                 if (nextX > 1 && nextY > 1 && nextZ > 1) return target == null ? Ray.CLEAR : Ray.BLOCKED;
                 if (nextX < nextY) {
-                    if (nextX < nextZ) { x += signX; nextX += deltaX; }
-                    else { z += signZ; nextZ += deltaZ; }
-                } else if (nextY < nextZ) { y += signY; nextY += deltaY; }
-                else { z += signZ; nextZ += deltaZ; }
+                    if (nextX < nextZ) { entryFraction = nextX; x += signX; nextX += deltaX; }
+                    else { entryFraction = nextZ; z += signZ; nextZ += deltaZ; }
+                } else if (nextY < nextZ) { entryFraction = nextY; y += signY; nextY += deltaY; }
+                else { entryFraction = nextZ; z += signZ; nextZ += deltaZ; }
             }
         }
     }
 
+    /** Allocation-free slab intersection with cell-local shapes, inclusive at touching edges. */
+    private static double hitFraction(AABB shape, Vec3 from, Vec3 to, int x, int y, int z) {
+        double near = 0, far = 1;
+        for (int axis = 0; axis < 3; axis++) {
+            double start = axis == 0 ? from.x - x : axis == 1 ? from.y - y : from.z - z;
+            double delta = axis == 0 ? to.x - from.x : axis == 1 ? to.y - from.y : to.z - from.z;
+            double min = axis == 0 ? shape.minX : axis == 1 ? shape.minY : shape.minZ;
+            double max = axis == 0 ? shape.maxX : axis == 1 ? shape.maxY : shape.maxZ;
+            if (delta == 0) { if (start < min || start > max) return -1; }
+            else {
+                double a = (min - start) / delta, b = (max - start) / delta;
+                near = Math.max(near, Math.min(a, b));
+                far = Math.min(far, Math.max(a, b));
+                if (near > far) return -1;
+            }
+        }
+        return near;
+    }
+
     /**
-     * The only through-wall exception: cells intersecting the accepted body expanded by exactly
-     * 1/16 block, plus that body's swept path for an accepted segment <=1.5 blocks. This can expose
-     * a neighboring cell when a body nearly touches its wall. No surrounding radius is revealed.
-     * Larger supplied bodies or longer segments fail closed; mounted vehicle extents require a
-     * runtime policy, because the supplied player body alone cannot describe them. Rebase teleports
-     * and deliver destination safety before permitting movement, rather than enlarge this envelope.
+     * The through-wall exception is exactly each accepted body plus its swept path, expanded by
+     * 1/16 block. The explicit segment cap may support falling/elytra/vehicles; it does not increase
+     * the margin or reveal a distance bubble. Rebased teleports use no prior body, so no intervening
+     * cells are disclosed. Work/shape bounds refuse unsupported paths rather than silently widen.
      */
-    private static boolean safety(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy,
+    private static boolean safety(GeometrySnapshot geometry, SafetyInput input, ConcealmentPolicy policy,
             Map<Long, Map<Integer, BitSet>> bits) {
-        AABB body = view.body();
-        if (body.getXsize() > 1 || body.getYsize() > 2 || body.getZsize() > 1) return false;
-        AABB previous = view.previousBody() == null ? body : view.previousBody();
-        if (previous.getXsize() > 1 || previous.getYsize() > 2 || previous.getZsize() > 1
-                || previous.getCenter().distanceToSqr(body.getCenter()) > MAX_MOVEMENT_SEGMENT * MAX_MOVEMENT_SEGMENT)
-            return false;
-        AABB envelope = body.inflate(SAFETY_MARGIN).minmax(previous.inflate(SAFETY_MARGIN));
-        int minX = (int) Math.floor(envelope.minX), minY = (int) Math.floor(envelope.minY), minZ = (int) Math.floor(envelope.minZ);
-        int maxX = (int) Math.ceil(envelope.maxX) - 1, maxY = (int) Math.ceil(envelope.maxY) - 1, maxZ = (int) Math.ceil(envelope.maxZ) - 1;
-        long cells = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-        if (cells > MAX_SAFETY_BLOCKS) return false;
+        if (safetyBounds(input) == null) return false;
         boolean complete = true;
-        for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) for (int x = minX; x <= maxX; x++) {
-            BlockPos pos = new BlockPos(x, y, z);
-            // Minkowski expansion tests the swept body, avoiding the diagonal union's corner cells.
-            AABB sweptCell = new AABB(pos).inflate(Math.max(body.getXsize(), previous.getXsize()) / 2 + SAFETY_MARGIN,
-                    Math.max(body.getYsize(), previous.getYsize()) / 2 + SAFETY_MARGIN,
-                    Math.max(body.getZsize(), previous.getZsize()) / 2 + SAFETY_MARGIN);
-            if (!sweptCell.contains(body.getCenter()) && !sweptCell.contains(previous.getCenter())
-                    && sweptCell.clip(previous.getCenter(), body.getCenter()).isEmpty()) continue;
-            if (policy.protects(y)) {
+        for (BodyPath path : input.bodies()) {
+            AABB body = path.body(), previous = path.previousBody() == null ? body : path.previousBody();
+            AABB envelope = body.inflate(SAFETY_MARGIN).minmax(previous.inflate(SAFETY_MARGIN));
+            int minX = (int) Math.floor(envelope.minX), minY = (int) Math.floor(envelope.minY), minZ = (int) Math.floor(envelope.minZ);
+            int maxX = (int) Math.ceil(envelope.maxX) - 1, maxY = (int) Math.ceil(envelope.maxY) - 1, maxZ = (int) Math.ceil(envelope.maxZ) - 1;
+            Vec3 from = previous.getCenter(), to = body.getCenter();
+            double halfX = Math.max(body.getXsize(), previous.getXsize()) / 2 + SAFETY_MARGIN;
+            double halfY = Math.max(body.getYsize(), previous.getYsize()) / 2 + SAFETY_MARGIN;
+            double halfZ = Math.max(body.getZsize(), previous.getZsize()) / 2 + SAFETY_MARGIN;
+            AABB expandedUnit = new AABB(-halfX, -halfY, -halfZ, 1 + halfX, 1 + halfY, 1 + halfZ);
+            for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) for (int x = minX; x <= maxX; x++) {
+                if (!policy.protects(y) || hitFraction(expandedUnit, from, to, x, y, z) < 0) continue;
+                BlockPos pos = new BlockPos(x, y, z);
                 if (geometry.cell(pos) == null) complete = false;
                 else reveal(bits, pos);
             }
         }
         return complete;
+    }
+
+    private static SafetyBounds safetyBounds(SafetyInput input) {
+        AABB combined = null;
+        long scans = 0;
+        for (BodyPath path : input.bodies()) {
+            AABB body = path.body(), previous = path.previousBody() == null ? body : path.previousBody();
+            if (body.getXsize() > 4 || body.getYsize() > 4 || body.getZsize() > 4
+                    || previous.getXsize() > 4 || previous.getYsize() > 4 || previous.getZsize() > 4
+                    || previous.getCenter().distanceToSqr(body.getCenter()) > input.maxAcceptedSegment() * input.maxAcceptedSegment()) return null;
+            AABB envelope = body.inflate(SAFETY_MARGIN).minmax(previous.inflate(SAFETY_MARGIN));
+            long sx = (long) Math.ceil(envelope.maxX) - (long) Math.floor(envelope.minX);
+            long sy = (long) Math.ceil(envelope.maxY) - (long) Math.floor(envelope.minY);
+            long sz = (long) Math.ceil(envelope.maxZ) - (long) Math.floor(envelope.minZ);
+            scans += sx * sy * sz;
+            if (scans > MAX_SAFETY_SCAN_CELLS) return null;
+            combined = combined == null ? envelope : combined.minmax(envelope);
+        }
+        BlockPos min = new BlockPos((int) Math.floor(combined.minX), (int) Math.floor(combined.minY), (int) Math.floor(combined.minZ));
+        BlockPos max = new BlockPos((int) Math.ceil(combined.maxX) - 1, (int) Math.ceil(combined.maxY) - 1, (int) Math.ceil(combined.maxZ) - 1);
+        long sx = (long) max.getX() - min.getX() + 1, sy = (long) max.getY() - min.getY() + 1, sz = (long) max.getZ() - min.getZ() + 1;
+        if (sx > 35 || sy > 35 || sz > 35 || sx * sy * sz > GeometrySnapshot.MAX_BLOCKS) return null;
+        return new SafetyBounds(min, max, (int) (sx * sy * sz));
     }
 
     private static void reveal(Map<Long, Map<Integer, BitSet>> bits, BlockPos pos) {
@@ -377,6 +490,26 @@ public final class VisibilityEvaluator {
 
     public record Result(Map<Long, Map<Integer, SectionVisibility>> chunks, boolean complete,
             boolean safetyComplete, int candidates, int rayWork, int snapshotBlocks, int unavailableBlocks) {}
+    public record BodyPath(AABB body, AABB previousBody) {
+        public BodyPath {
+            checkBody(body);
+            if (previousBody != null) checkBody(previousBody);
+        }
+        private static void checkBody(AABB body) {
+            if (body == null || !Viewpoint.finite(body.minX, body.minY, body.minZ, body.maxX, body.maxY, body.maxZ)
+                    || body.getXsize() <= 0 || body.getYsize() <= 0 || body.getZsize() <= 0)
+                throw new IllegalArgumentException("Invalid server-accepted body");
+        }
+    }
+    public record SafetyInput(List<BodyPath> bodies, double maxAcceptedSegment) {
+        public SafetyInput {
+            bodies = List.copyOf(bodies);
+            if (bodies.isEmpty() || bodies.size() > 2 || !Double.isFinite(maxAcceptedSegment)
+                    || maxAcceptedSegment < 1 || maxAcceptedSegment > MAX_ACCEPTED_MOVEMENT)
+                throw new IllegalArgumentException("Safety requires one or two accepted bodies and an explicit segment cap in [1,24]");
+        }
+    }
+    private record SafetyBounds(BlockPos min, BlockPos max, int blocks) {}
     public record SightResult(boolean clear, boolean complete, int rayWork, int snapshotBlocks) {}
     private enum Ray { CLEAR, BLOCKED, EXHAUSTED }
     private static final class Budget {

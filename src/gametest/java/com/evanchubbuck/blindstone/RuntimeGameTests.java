@@ -16,7 +16,8 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
-import net.minecraft.network.protocol.common.custom.BrandPayload;
+import net.minecraft.network.protocol.common.custom.DiscardedPayload;
+import net.minecraft.resources.Identifier;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
@@ -50,10 +51,10 @@ public final class RuntimeGameTests {
                 for (int i = 0; i < 128; i++) {
                     runtime.beginTick();
                     runtime.refresh(helper.getLevel());
-                    sent += fixture.take().stream().filter(packet -> packet instanceof ClientboundBlockUpdatePacket).count();
+                    sent += fixture.take().stream().filter(packet -> packet instanceof ClientboundLevelChunkWithLightPacket).count();
                     helper.assertTrue(fixture.connection.isConnected(), "Bounded sight jobs must keep the movement-safe test viewer connected");
                 }
-                helper.assertTrue(sent > 8, "Runtime must publish body safety and later sight blocks through the real Connection hook");
+                helper.assertTrue(sent > 0, "Runtime must publish a coherent movement-safe full chunk through the real Connection hook");
                 helper.assertTrue(!runtime.inspect(fixture.player).contains("visibility candidates=0/"),
                         "Retained sight work must advance beyond initial camera work under a 32-check budget");
             }
@@ -117,13 +118,17 @@ public final class RuntimeGameTests {
             var chunk = helper.getLevel().getChunkAt(fixture.player.blockPosition());
             var packet = new ClientboundLevelChunkWithLightPacket(chunk, helper.getLevel().getLightEngine(), null, null);
             fixture.connection.send(packet);
-            var output = fixture.take();
+            List<Object> output = new ArrayList<>();
+            for(int i=0;i<200&&output.isEmpty();i++) {
+                fixture.runtime.beginTick();fixture.runtime.refresh(helper.getLevel());output.addAll(fixture.take());
+            }
             helper.assertTrue(output.size() == 1 && output.getFirst() instanceof ClientboundLevelChunkWithLightPacket,
                     "Full chunks must pass through the actual Connection hook");
             var safe = (ClientboundLevelChunkWithLightPacket) output.getFirst();
             helper.assertTrue(safe != packet && safe.chunkData() != packet.chunkData(), "Each viewer gets isolated chunk data");
-            helper.assertTrue(safe.lightData().skyUpdates().isEmpty() && safe.lightData().blockUpdates().isEmpty(),
-                    "Experimental boundary must not copy hidden-derived light");
+            helper.assertTrue(safe.lightData()!=packet.lightData()
+                    && safe.lightData().skyYMask().cardinality()==safe.lightData().skyUpdates().size(),
+                    "Runtime must supply detached reconstructed light with coherent arrays");
             helper.assertTrue(fixture.runtime.inspect(fixture.player).contains("Tracked chunks=1"),
                     "Initial chunk delivery must register the tracking session");
         }
@@ -133,7 +138,7 @@ public final class RuntimeGameTests {
     @GameTest
     public void unknownCustomPayloadDisconnectsWithoutForwarding(GameTestHelper helper) throws Exception {
         try (var fixture = new Fixture(helper)) {
-            fixture.connection.send(new ClientboundCustomPayloadPacket(new BrandPayload("unsupported")));
+            fixture.connection.send(new ClientboundCustomPayloadPacket(new DiscardedPayload(Identifier.parse("fixture:unsupported"))));
             helper.assertTrue(fixture.take().isEmpty(), "Unsupported custom packets cannot bypass concealment");
             helper.assertTrue(!fixture.connection.isConnected(), "Unsafe compatibility route must disconnect affected viewer");
         }

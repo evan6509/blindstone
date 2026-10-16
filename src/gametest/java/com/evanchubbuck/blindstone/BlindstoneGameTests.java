@@ -290,7 +290,21 @@ public final class BlindstoneGameTests {
 
     @GameTest
     public void missingPacketHooksRefuseNormalStartup(GameTestHelper helper) {
-        expectFailure(helper, () -> BlindstoneMod.requireDevelopmentMode(false), IllegalStateException.class);
+        expectFailure(helper, () -> HookReadiness.requireMarker(String.class, HookReadiness.RequiredHook.class), IllegalStateException.class);
+        check(helper, BlindstoneMod.admissionRejection(false, false, true) != null
+                && BlindstoneMod.admissionRejection(false, true, false) != null,
+                "Missing hook or runtime readiness must keep ordinary admission closed");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void transformedMandatoryHooksAllowNormalModeReadiness(GameTestHelper helper) {
+        HookReadiness.verify();
+        check(helper, HookReadiness.ready(), "All mandatory target marker interfaces must be transformed");
+        check(helper, BlindstoneMod.admissionRejection(false, true, true) == null,
+                "Ordinary alpha startup must permit admission with validated hooks and runtime");
+        check(helper, BlindstoneMod.isServerConsole(helper.getLevel().getServer().createCommandSourceStack()),
+                "Server console must be identified by the actual command source identity");
         helper.succeed();
     }
 

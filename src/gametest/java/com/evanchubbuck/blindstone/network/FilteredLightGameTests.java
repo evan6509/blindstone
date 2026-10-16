@@ -3,6 +3,10 @@ package com.evanchubbuck.blindstone.network;
 import io.netty.buffer.Unpooled;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.HashMap;
+import java.util.BitSet;
 import com.evanchubbuck.blindstone.ConcealmentPolicy;
 import com.evanchubbuck.blindstone.SectionVisibility;
 import net.minecraft.core.BlockPos;
@@ -148,6 +152,133 @@ public final class FilteredLightGameTests {
         catch (FilteredLight.BudgetExceededException expected) { work = true; }
         helper.assertTrue(cells && work, "Insufficient cell/propagation budgets must abort safely");
         helper.succeed();
+    }
+
+    @GameTest
+    public void schedulerPublishesOnlyCompletedGenerationAndPreservesOrdinarySunlight(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var chunk = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
+        var memory = new LightScheduler.MemoryBudget(32 * 1024 * 1024);
+        var scheduler = new LightScheduler(2, 4, memory);
+        try {
+            helper.assertTrue(scheduler.request(chunk, context(level, Set.of()), 1), "Initial light request fits bounded memory");
+            scheduler.step(128, 1_000_000);
+            helper.assertTrue(scheduler.getReady(chunk, 1) == null, "Partial capture must never publish light");
+            helper.assertTrue(scheduler.request(chunk, context(level, Set.of()), 2), "New generation replaces stale partial work");
+            complete(helper, scheduler);
+            var ready = scheduler.getReady(chunk, 2);
+            helper.assertTrue(ready != null && scheduler.getReady(chunk, 1) == null, "Only matching completed generation may publish");
+            var skyPos = new BlockPos(chunk.x() * 16 + 8, level.getMaxY(), chunk.z() * 16 + 8);
+            helper.assertTrue(lightAt(ready, true, level, skyPos) == level.getBrightness(net.minecraft.world.level.LightLayer.SKY, skyPos),
+                    "Safe upper-world sunlight remains ordinary vanilla light");
+            helper.assertTrue(scheduler.lastCompletedCells() == 46 * 46 * 16,
+                    "Fully concealed initial chunks solve only the 16-block public boundary band");
+            org.slf4j.LoggerFactory.getLogger("blindstone-light-benchmark").info(
+                    "Initial light fixture: cells={}, operations={}, computeMillis={}", scheduler.lastCompletedCells(),
+                    scheduler.completedOperations(), scheduler.completedNanos() / 1_000_000.0);
+        } finally { scheduler.reset(); }
+        helper.assertTrue(memory.usedBytes() == 0, "Reset releases jobs and cache allocations");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void schedulerReconstructsAuthorizedTorchAndKeepsHiddenTorchDark(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var torch = helper.absolutePos(new BlockPos(2, 2, 2));
+        var previous = new HashMap<BlockPos, BlockState>();
+        var visible = new HashSet<BlockPos>();
+        for (int y = 0; y < 3; y++) for (int z = -1; z <= 1; z++) for (int x = -1; x <= 1; x++) {
+            var pos = torch.offset(x, y, z);
+            previous.put(pos, level.getBlockState(pos));
+            visible.add(pos);
+            level.setBlock(pos, AIR, 2);
+        }
+        var floor = torch.below();
+        previous.put(floor, level.getBlockState(floor));
+        level.setBlock(floor, STONE, 2);
+        level.setBlock(torch, Blocks.TORCH.defaultBlockState(), 2);
+        var memory = new LightScheduler.MemoryBudget(32 * 1024 * 1024);
+        var scheduler = new LightScheduler(1, 2, memory);
+        var chunk = ChunkPos.containing(torch);
+        try {
+            helper.assertTrue(scheduler.request(chunk, context(level, visible), 1), "Authorized light request is accepted");
+            complete(helper, scheduler);
+            var permitted = scheduler.getReady(chunk, 1);
+            var adjacent = (torch.getX() & 15) == 15 ? torch.west() : torch.east();
+            helper.assertTrue(lightAt(permitted, false, level, torch) == 14
+                    && lightAt(permitted, false, level, adjacent) == 13, "Permitted torch illuminates ordinary revealed room air");
+            scheduler.invalidate(chunk);
+            helper.assertTrue(scheduler.request(chunk, context(level, Set.of()), 2), "Concealed generation may be reconstructed");
+            complete(helper, scheduler);
+            helper.assertTrue(lightAt(scheduler.getReady(chunk, 2), false, level, torch) == 0,
+                    "Real hidden torch never contributes to filtered lighting");
+        } finally {
+            scheduler.reset();
+            previous.forEach((pos, state) -> level.setBlock(pos, state, 2));
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void schedulerInvalidatesNeighborHalosAndBoundsGlobalMemory(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var chunk = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
+        var context = context(level, Set.of());
+        var memory = new LightScheduler.MemoryBudget(32 * 1024 * 1024);
+        var scheduler = new LightScheduler(1, 2, memory);
+        try {
+            helper.assertTrue(scheduler.request(chunk, context, 1), "First job enters bounded scheduler");
+            helper.assertTrue(!scheduler.request(new ChunkPos(chunk.x() + 1, chunk.z()), context, 1), "Per-viewer job capacity is enforced");
+            complete(helper, scheduler);
+            helper.assertTrue(memory.usedBytes() > 0, "Ready cache counts against shared memory");
+            scheduler.invalidate(new ChunkPos(chunk.x() + 1, chunk.z()));
+            helper.assertTrue(scheduler.readyCount() == 0 && scheduler.getReady(chunk, 1) == null && memory.usedBytes() == 0,
+                    "A neighboring geometry change invalidates dependent ready lighting and releases memory");
+            var tiny = new LightScheduler(1, 1, new LightScheduler.MemoryBudget(262144));
+            helper.assertTrue(!tiny.request(chunk, context, 1) && tiny.pendingCount() == 0,
+                    "Global memory exhaustion defers before allocating a job");
+        } finally { scheduler.reset(); }
+        helper.succeed();
+    }
+
+    private static void complete(GameTestHelper helper, LightScheduler scheduler) {
+        int slices = 0;
+        while (scheduler.pendingCount() != 0 && slices++ < 10000) {
+            int used = scheduler.step(8192, 2_000_000);
+            helper.assertTrue(used <= 8198, "Cooperative work cannot exceed a slice by more than one six-neighbor cell");
+        }
+        helper.assertTrue(scheduler.pendingCount() == 0, "Bounded fixture must finish");
+    }
+
+    private static PacketFilter.Context context(ServerLevel level, Set<BlockPos> visible) {
+        var masks = new HashMap<Long, Map<Integer, SectionVisibility>>();
+        var bits = new HashMap<Long, Map<Integer, BitSet>>();
+        for (var pos : visible) bits.computeIfAbsent(ChunkPos.containing(pos).pack(), ignored -> new HashMap<>())
+                .computeIfAbsent(Math.floorDiv(pos.getY(), 16), ignored -> new BitSet())
+                .set(SectionVisibility.index(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15));
+        bits.forEach((chunk, sections) -> {
+            var result = new HashMap<Integer, SectionVisibility>();
+            sections.forEach((y, value) -> result.put(y, SectionVisibility.from(value)));
+            masks.put(chunk, Map.copyOf(result));
+        });
+        return new PacketFilter.Context() {
+            @Override public ServerLevel level() { return level; }
+            @Override public ConcealmentPolicy policy() { return new ConcealmentPolicy(level.getMinY(), 64); }
+            @Override public boolean isAuthorized(BlockPos pos) { return visible.contains(pos); }
+            @Override public boolean isEntityVisible(int id) { return false; }
+            @Override public Map<Integer, SectionVisibility> masks(ChunkPos chunk) { return masks.getOrDefault(chunk.pack(), Map.of()); }
+        };
+    }
+
+    private static int lightAt(ClientboundLightUpdatePacketData data, boolean sky, ServerLevel level, BlockPos pos) {
+        if (data == null) throw new IllegalStateException("Fixture light is not ready");
+        int section = Math.floorDiv(pos.getY(), 16) - level.getMinSectionY() + 1;
+        var mask = sky ? data.skyYMask() : data.blockYMask();
+        if (!mask.get(section)) return 0;
+        int update = mask.get(0, section).cardinality();
+        byte[] array = (sky ? data.skyUpdates() : data.blockUpdates()).get(update);
+        int nibble = ((pos.getY() & 15) << 8) | ((pos.getZ() & 15) << 4) | (pos.getX() & 15);
+        return array[nibble >> 1] >> ((nibble & 1) * 4) & 15;
     }
 
     private static byte[] encode(ClientboundLightUpdatePacketData data) {

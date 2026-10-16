@@ -56,23 +56,23 @@ def main():
             if not policy:
                 return "not_intercepted"
             if simple in allowed:
-                return "development_passthrough_allowlist"
+                return "alpha_passthrough_allowlist"
             if simple in handled:
-                return "development_handler_or_explicit_suppression"
-            return "development_unknown_path_disconnect"
+                return "alpha_handler_or_explicit_suppression"
+            return "alpha_unknown_path_disconnect"
 
         result = {
             "minecraft": "26.3",
             "method": "Lexical class references excluding imports; not a complete send-path audit.",
-            "protection_active": False,
-            "admission": "closed; development Connection boundary only",
+            "normal_mode": "runnable private alpha; filtering requires mandatory transformed hooks and validated runtime configuration",
+            "admission": "normal: runtime readiness gate; isolated development: denied",
             "coverage_note": "Static policy classification is not runtime observation or complete protection evidence.",
             "packets": [{"class": n[:-5].replace("/", "."), "runtime_status": status(n),
                          "referenced_by": references[n.rsplit("/", 1)[-1][:-5]]} for n in packets],
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2) + "\n")
-        print(f"Inventoried {len(packets)} outgoing packet classes; protection active: false")
+        print(f"Inventoried {len(packets)} outgoing packet classes; static private-alpha policy, not live enforcement evidence")
 
 
 if __name__ == "__main__":

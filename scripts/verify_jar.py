@@ -30,8 +30,8 @@ def main():
         mixins = json.loads(archive.read("blindstone.mixins.json"))
         require(mixins["required"] and mixins["injectors"]["defaultRequire"] == 1, "Admission hook must be mandatory")
         require("PlayerListMixin" in mixins["mixins"], "Missing admission hook")
-        for hook in ["ConnectionMixin", "ChunkMapMixin", "TrackedEntityAccess", "TrackedEntityMixin", "LevelChunkMixin", "ServerCommonListenerAccess"]:
-            require(hook in mixins["mixins"], f"Missing mandatory development hook: {hook}")
+        for hook in ["ConnectionMixin", "ChunkMapMixin", "TrackedEntityAccess", "TrackedEntityMixin", "LevelChunkMixin", "ServerCommonListenerAccess", "PlayerChunkSenderMixin", "HookReadinessMixin", "CommandSourceAccess"]:
+            require(hook in mixins["mixins"], f"Missing mandatory alpha hook: {hook}")
         for hook in mixins["mixins"]:
             bytecode = archive.read(mixins["package"].replace(".", "/") + "/" + hook + ".class")
             require(int.from_bytes(bytecode[6:8], "big") == 69, f"Missing Java 25 mixin: {hook}")
@@ -39,7 +39,9 @@ def main():
         for name in ["BlindstoneMod", "ChunkFilter", "ConcealmentPolicy", "SectionVisibility", "ViewerState", "mixin/PlayerListMixin",
                      "mixin/ConnectionMixin", "mixin/ChunkMapMixin", "mixin/TrackedEntityMixin", "mixin/LevelChunkMixin",
                      "runtime/BlindstoneRuntime", "network/PacketFilter", "visibility/GeometrySnapshot", "visibility/VisibilityEvaluator",
-                     "config/ConfigManager", "config/BlindstoneConfig", "diagnostics/BlindstoneDiagnostics"]:
+                     "config/ConfigManager", "config/BlindstoneConfig", "diagnostics/BlindstoneDiagnostics", "HookReadiness",
+                     "network/FilteredLight", "network/LightScheduler", "network/EntityPolicy", "mixin/CommandSourceAccess",
+                     "mixin/HookReadinessMixin", "mixin/PlayerChunkSenderMixin"]:
             bytecode = archive.read(prefix + name + ".class")
             require(int.from_bytes(bytecode[6:8], "big") == 69, f"Expected Java 25 class: {name}")
         require(not any("GameTests" in n or n == "fabric-gametest-api-v1" for n in archive.namelist()), "Test code bundled in mod")

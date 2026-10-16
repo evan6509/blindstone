@@ -2,6 +2,19 @@
   "required": true,
   "package": "com.evanchubbuck.blindstone.mixin",
   "compatibilityLevel": "JAVA_25",
-  "mixins": ["PlayerListMixin", "ConnectionMixin", "LevelChunkMixin", "ChunkMapMixin", "TrackedEntityAccess", "TrackedEntityMixin", "ServerCommonListenerAccess"],
-  "injectors": { "defaultRequire": 1 }
+  "mixins": [
+    "PlayerListMixin",
+    "ConnectionMixin",
+    "LevelChunkMixin",
+    "ChunkMapMixin",
+    "TrackedEntityAccess",
+    "TrackedEntityMixin",
+    "ServerCommonListenerAccess",
+    "PlayerChunkSenderMixin",
+    "HookReadinessMixin",
+    "CommandSourceAccess"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

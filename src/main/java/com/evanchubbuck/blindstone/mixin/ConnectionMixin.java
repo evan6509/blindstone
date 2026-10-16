@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.Shadow;
 
 /** Covers listener sends, direct Connection sends, and pending actions before the Netty dispatch. */
 @Mixin(Connection.class)
-public abstract class ConnectionMixin {
+public abstract class ConnectionMixin implements com.evanchubbuck.blindstone.runtime.PacketCompletion {
     @Shadow private Channel channel;
     @Shadow public abstract PacketListener getPacketListener();
     @Shadow public abstract void disconnect(Component reason);
@@ -42,10 +42,12 @@ public abstract class ConnectionMixin {
         try {
             var runtime = BlindstoneRuntime.get(server);
             if (runtime == null) throw new IllegalStateException("Blindstone runtime is not ready");
+            if (runtime.intercept(game.player, packet, callback, flush)) return;
             Packet<?> safe = runtime.filter(game.player, packet);
             if (safe == null) complete(callback, null);
             else original.call(safe, callback, flush);
         } catch (RuntimeException failure) {
+            org.slf4j.LoggerFactory.getLogger("blindstone").error("Outgoing protection failed for {}",packet.getClass().getSimpleName(),failure);
             disconnect(Component.literal("Blindstone stopped an unsafe packet; protection could not maintain this connection."));
             complete(callback, failure);
         }
@@ -58,6 +60,10 @@ public abstract class ConnectionMixin {
     }
 
     private void complete(ChannelFutureListener callback, Throwable failure) {
+        blindstone$complete(callback, failure);
+    }
+
+    public void blindstone$complete(ChannelFutureListener callback, Throwable failure) {
         if (callback == null) return;
         channel.eventLoop().execute(() -> {
             try { callback.operationComplete(failure == null ? channel.newSucceededFuture() : channel.newFailedFuture(failure)); }
