@@ -34,3 +34,9 @@ jobs:
         run: ./gradlew --no-daemon runGametest
       - name: Verify server artifact
         run: python3 scripts/verify_jar.py
+      - name: Prepare installed production admission test
+        run: ./gradlew --no-daemon prepareAdmission
+      - name: Exercise ordinary offline admission and lifecycle
+        run: python3 scripts/test_admission.py
+      - name: Verify development admission remains closed
+        run: python3 scripts/test_admission.py --development-denial

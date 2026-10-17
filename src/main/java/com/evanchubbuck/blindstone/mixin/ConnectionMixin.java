@@ -24,6 +24,7 @@ public abstract class ConnectionMixin implements com.evanchubbuck.blindstone.run
     @Shadow private Channel channel;
     @Shadow public abstract PacketListener getPacketListener();
     @Shadow public abstract void disconnect(Component reason);
+    @Shadow public abstract void flushChannel();
 
     @WrapMethod(method = "sendPacket")
     private void blindstone$filterBeforeChannelDispatch(Packet<?> packet, ChannelFutureListener callback,
@@ -32,7 +33,8 @@ public abstract class ConnectionMixin implements com.evanchubbuck.blindstone.run
             original.call(packet, callback, flush);
             return;
         }
-        var server = game.player.level().getServer();
+        // Listener ownership is final; do not even dereference the player's mutable level off-thread.
+        var server = ((ServerCommonListenerAccess) game).blindstone$server();
         // No mutable world content or viewer state may be consulted from a channel/worker thread.
         if (!server.isSameThread()) {
             disconnect(Component.literal("Blindstone rejected a world packet sent outside the owning server thread."));
@@ -44,7 +46,11 @@ public abstract class ConnectionMixin implements com.evanchubbuck.blindstone.run
             if (runtime == null) throw new IllegalStateException("Blindstone runtime is not ready");
             if (runtime.intercept(game.player, packet, callback, flush)) return;
             Packet<?> safe = runtime.filter(game.player, packet);
-            if (safe == null) complete(callback, null);
+            if (safe == null) {
+                // Even a concealed frame can be the flush boundary for earlier writes.
+                if (flush) flushChannel();
+                complete(callback, null);
+            }
             else original.call(safe, callback, flush);
         } catch (RuntimeException failure) {
             org.slf4j.LoggerFactory.getLogger("blindstone").error("Outgoing protection failed for {}",packet.getClass().getSimpleName(),failure);

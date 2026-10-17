@@ -46,11 +46,16 @@ def main():
         handled = set(re.findall(r"instanceof (Clientbound\w+Packet)\b", policy))
         transport = {"ClientboundDisconnectPacket", "ClientboundKeepAlivePacket", "ClientboundPingPacket",
                      "ClientboundSystemChatPacket", "ClientboundPlayerChatPacket"}
+        unsupported = {"ClientboundStoreCookiePacket", "ClientboundShowDialogPacket", "ClientboundCookieRequestPacket"}
 
         def status(name):
             simple = name.rsplit("/", 1)[-1][:-5]
-            if "/game/" not in name and "/common/" not in name:
+            if not any(package in name for package in ("/game/", "/common/", "/cookie/")):
                 return "outside_play_boundary"
+            if simple == "ClientboundBundleDelimiterPacket":
+                return "codec_generated_after_connection_hook_direct_send_rejected"
+            if simple in unsupported:
+                return "intentional_unsupported_protected_play_disconnect"
             if simple in transport:
                 return "intentionally_allowed_transport_or_player_chat"
             if not policy:

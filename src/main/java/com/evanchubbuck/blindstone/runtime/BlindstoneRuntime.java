@@ -147,6 +147,7 @@ public final class BlindstoneRuntime {
             if(data.skyYMask().nextSetBit(firstSafe)>=0||data.blockYMask().nextSetBit(firstSafe)>=0
                     ||data.emptySkyYMask().nextSetBit(firstSafe)>=0||data.emptyBlockYMask().nextSetBit(firstSafe)>=0)
                 invalidateLight(s,new ChunkPos(update.x(),update.z()));
+            if(flush) connection(player).flushChannel();
             complete(s,callback,null);
             return true;
         }
@@ -414,6 +415,7 @@ public final class BlindstoneRuntime {
             } else outputs.add(frame);
         }
         if(batch.originalBatch&&count==0) {
+            if(batch.frames.stream().anyMatch(Frame::flush)) connection(s.player).flushChannel();
             outputs.forEach(frame->complete(s,frame.callback,null));
             s.player.connection.chunkSender.onChunkBatchReceivedByClient(9);
             return;

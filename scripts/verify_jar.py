@@ -44,7 +44,7 @@ def main():
                      "mixin/HookReadinessMixin", "mixin/PlayerChunkSenderMixin"]:
             bytecode = archive.read(prefix + name + ".class")
             require(int.from_bytes(bytecode[6:8], "big") == 69, f"Expected Java 25 class: {name}")
-        require(not any("GameTests" in n or n == "fabric-gametest-api-v1" for n in archive.namelist()), "Test code bundled in mod")
+        require(not any("GameTests" in n or "/admission/" in n or n == "fabric-gametest-api-v1" for n in archive.namelist()), "Test code bundled in mod")
         require(metadata["entrypoints"]["main"] == ["com.evanchubbuck.blindstone.BlindstoneMod"], "Missing server initializer")
     print(f"Verified {jar}\nSHA256 {hashlib.sha256(jar.read_bytes()).hexdigest()}")
 

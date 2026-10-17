@@ -27,6 +27,10 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 sourceSets {
+    admission {
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
     gametest {
         compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
         runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
@@ -57,3 +61,27 @@ loom {
 }
 
 tasks.named('runSmoke') { standardInput = System.in }
+
+// The driver uses a separately installed production JAR. These utilities never enter that JAR.
+tasks.register('prepareAdmission', JavaExec) {
+    dependsOn tasks.named('build'), tasks.named('admissionClasses')
+    classpath = sourceSets.admission.runtimeClasspath
+    workingDir = layout.buildDirectory.get().asFile
+    mainClass = 'com.evanchubbuck.blindstone.admission.AdmissionMetadata'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+    args layout.buildDirectory.file('admission-metadata.json').get().asFile.absolutePath
+    doLast {
+        def libraries = sourceSets.main.runtimeClasspath.files.findAll {
+            it.name.endsWith('.jar') && !it.path.contains('net.fabricmc.fabric-api') && !it.name.startsWith('minecraft-')
+        }
+        def serverJar = new File(gradle.gradleUserHomeDir, 'caches/fabric-loom/26.3/minecraft-extracted_server.jar')
+        if (!serverJar.isFile()) throw new GradleException('Pinned extracted production server JAR is missing')
+        def api = configurations.runtimeClasspath.files.find { it.name == "fabric-api-${project.fabric_version}.jar" }
+        if (api == null) throw new GradleException('Pinned Fabric API umbrella JAR is missing')
+        def launch = [java: javaLauncher.get().executablePath.asFile.absolutePath,
+            classpath: (libraries + serverJar).collect { it.absolutePath }.join(File.pathSeparator),
+            serverJar: serverJar.absolutePath, fabricApi: api.absolutePath,
+            artifact: tasks.jar.archiveFile.get().asFile.absolutePath]
+        layout.buildDirectory.file('admission-launch.json').get().asFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(launch)) + '\n'
+    }
+}

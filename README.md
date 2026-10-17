@@ -2,7 +2,7 @@
 
 A server-side Fabric **private alpha** that conceals undiscovered Overworld blocks, air pockets, light sources, block entities, and non-player entities separately for each viewer. Ordinary clients can join without installing Blindstone. The server keeps its real world; concealed underground data is replaced only in outgoing views.
 
-Normal startup enables filtering after required hooks and configuration validate. `-Dblindstone.development=true` is reserved for isolated automated tests and deliberately denies player admission. This alpha is runnable; graphical gameplay, adversarial-client acceptance, and representative SMP capacity are still validation work. See [test evidence](docs/TEST_REPORT.md) for exactly what has been exercised.
+Normal startup enables filtering after required hooks and configuration validate. `-Dblindstone.development=true` is reserved for isolated automated tests and deliberately denies player admission. Ordinary offline admission and lifecycle now have a real handshake/configuration regression against the installed production JAR. Graphical gameplay, authenticated/proxy admission, adversarial-client acceptance, and representative SMP capacity remain unverified. See [test evidence](docs/TEST_REPORT.md).
 
 ## Install
 
@@ -41,9 +41,14 @@ With a Java 25 JDK on `JAVA_HOME`/`PATH`:
 ```sh
 ./gradlew --no-daemon clean build runGametest
 python3 scripts/verify_jar.py
+./gradlew --no-daemon prepareAdmission
+python3 scripts/test_admission.py
+python3 scripts/test_admission.py --development-denial
 ```
 
 The installable artifact is `build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar`. GameTests use `build/gametest`, keep external player admission closed, and write `build/gametest-results.xml`.
+
+The admission harness installs only the production JAR and pinned Fabric API into a fresh `build/admission/<uuid>` world. It binds an ephemeral loopback listener, completes offline login/configuration with two independent headless clients, decodes concealed chunks, exercises lifecycle/rejoin and observes normal keepalives for 20 seconds. It stops its own server and writes `result.json` and `server.log`. It requires no client mod or development flag. The separate `--development-denial` negative control verifies the isolation flag still rejects external logins. These checks also run in CI.
 
 For a separate normal-mode development server, prepare `build/smoke/eula.txt` and server properties, then run:
 
@@ -64,6 +69,6 @@ python3 scripts/inventory_packets.py
 
 Previously downloaded terrain cannot be erased from a modified client. Player ESP, normal sounds, surface clues, public terrain/biomes, and information shared by other players remain discovery routes. Blindstone provides no seed secrecy, world-generation changes, claims, or anti-cheat.
 
-The Overworld is the only protected dimension. Sampled sight can cause delayed reveals around small openings; supported movement remains bounded. Some secondary visual payloads are sanitized or suppressed. Arbitrary mod payloads, direct Netty writes, and mods replacing supported send paths require explicit compatibility work. A successful build, server boot, or decoded protocol fixture does not prove graphical playability, profiler resistance, or SMP performance.
+The Overworld is the only protected dimension. Sampled sight can cause delayed reveals around small openings; supported movement remains bounded. Post-effect identifiers, resource-pack controls and audited server UI metadata have explicit policies. Protected-PLAY cookies, show-dialog schemas and arbitrary mod payloads remain unsupported. Non-transport PLAY packets sent off-thread disconnect even outside the Overworld. Direct Netty writes and replacement send paths need explicit compatibility work. See the [integration audit](docs/COMPATIBILITY.md). Automated admission does not prove graphical playability, profiler resistance, or SMP performance.
 
 Development commits belong on `codex/development`; `main` requires explicit integration approval. CI builds/tests only; no release or publishing workflow is configured. Redistribution rights remain reserved pending a license decision.

@@ -7,7 +7,7 @@
   "packets": [
     {
       "class": "net.minecraft.network.protocol.common.ClientboundClearDialogPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -29,7 +29,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -74,7 +74,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundPostEffectsPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -85,7 +85,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -96,7 +96,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -108,7 +108,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundServerLinksPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -119,7 +119,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundShowDialogPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "intentional_unsupported_protected_play_disconnect",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -131,7 +131,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundStoreCookiePacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "intentional_unsupported_protected_play_disconnect",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -142,7 +142,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.common.ClientboundTransferPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "alpha_passthrough_allowlist",
       "referenced_by": [
         "net/minecraft/network/protocol/common/ClientCommonPacketListener.java",
         "net/minecraft/network/protocol/common/CommonPacketTypes.java",
@@ -214,7 +214,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket",
-      "runtime_status": "outside_play_boundary",
+      "runtime_status": "intentional_unsupported_protected_play_disconnect",
       "referenced_by": [
         "net/minecraft/network/protocol/configuration/ConfigurationProtocols.java",
         "net/minecraft/network/protocol/cookie/ClientCookiePacketListener.java",
@@ -360,7 +360,7 @@
     },
     {
       "class": "net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket",
-      "runtime_status": "alpha_unknown_path_disconnect",
+      "runtime_status": "codec_generated_after_connection_hook_direct_send_rejected",
       "referenced_by": [
         "net/minecraft/network/protocol/game/GamePacketTypes.java",
         "net/minecraft/network/protocol/game/GameProtocols.java"

@@ -52,6 +52,35 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
  */
 public final class LiveConnectionGameTests {
     @GameTest(maxTicks = 100)
+    public void auditedCommonPacketsRoundTripOnRealTcp(GameTestHelper helper) throws Exception {
+        try (var fixture = new TcpPlayFixture(helper)) {
+            var id = UUID.randomUUID();
+            List<Packet<?>> packets = List.of(
+                    new net.minecraft.network.protocol.common.ClientboundPostEffectsPacket(List.of()),
+                    new net.minecraft.network.protocol.common.ClientboundPostEffectsPacket(List.of(net.minecraft.resources.Identifier.parse("minecraft:creeper"))),
+                    new net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket(id, "https://example.invalid/pack.zip", "", true,
+                            java.util.Optional.of(Component.literal("Fixture required pack"))),
+                    new net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket(java.util.Optional.of(id)),
+                    new net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket(java.util.Map.of("fixture", "26.3")),
+                    new net.minecraft.network.protocol.common.ClientboundServerLinksPacket(List.of(
+                            new net.minecraft.server.ServerLinks.UntrustedEntry(com.mojang.datafixers.util.Either.left(
+                                    net.minecraft.server.ServerLinks.KnownLinkType.BUG_REPORT), "https://example.invalid/bugs"))),
+                    net.minecraft.network.protocol.common.ClientboundClearDialogPacket.INSTANCE,
+                    new net.minecraft.network.protocol.common.ClientboundTransferPacket("example.invalid", 25565));
+            var callbacks = new java.util.concurrent.atomic.AtomicInteger();
+            for (var packet : packets) {
+                fixture.serverConnection.send(packet, f -> { if (f.isSuccess()) callbacks.incrementAndGet(); }, false);
+            }
+            fixture.serverConnection.flushChannel();
+            for (var expected : packets) helper.assertTrue(expected.equals(fixture.awaitPacket()),
+                    "Pinned common packet codec must preserve every audited field and order: " + expected.type());
+            helper.assertTrue(callbacks.get() == packets.size(), "TCP flush must complete every source callback once");
+            fixture.assertConnected(helper);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(maxTicks = 100)
     public void twoTcpPlayConnectionsDecodeIndependentFilteredUpdatesAndBundles(GameTestHelper helper) throws Exception {
         try (var first = new TcpPlayFixture(helper); var second = new TcpPlayFixture(helper)) {
             BlockPos hidden = new BlockPos(first.player.getBlockX(), 20, first.player.getBlockZ());

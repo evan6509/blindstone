@@ -18,6 +18,15 @@ import net.minecraft.core.particles.ExplosionParticleInfo;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.ClientboundPostEffectsPacket;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket;
+import net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket;
+import net.minecraft.network.protocol.common.ClientboundServerLinksPacket;
+import net.minecraft.network.protocol.common.ClientboundClearDialogPacket;
+import net.minecraft.network.protocol.common.ClientboundStoreCookiePacket;
+import net.minecraft.network.protocol.common.ClientboundShowDialogPacket;
+import net.minecraft.network.protocol.common.ClientboundTransferPacket;
 import net.minecraft.network.protocol.common.custom.BrandPayload;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.level.ServerLevel;
@@ -58,7 +67,7 @@ public final class PacketFilter {
         default ClientboundLightUpdatePacketData light(ChunkPos chunk) { throw new IllegalStateException("Filtered lighting is not ready"); }
     }
 
-    /* Explicit 26.3 class identities. Unknown/custom packets are dropped, never implicitly allowed. */
+    /* Explicit 26.3 class identities. Unknown packets throw; they are never implicitly allowed. */
     private static final Set<Class<?>> PASSTHROUGH = Set.of(
             ClientboundBlockChangedAckPacket.class, ClientboundAwardStatsPacket.class,
             ClientboundChunksBiomesPacket.class, ClientboundChunkBatchFinishedPacket.class,
@@ -102,6 +111,13 @@ public final class PacketFilter {
             net.minecraft.network.protocol.common.ClientboundKeepAlivePacket.class,
             net.minecraft.network.protocol.common.ClientboundPingPacket.class,
             net.minecraft.network.protocol.common.ClientboundDisconnectPacket.class,
+            // Identifier-only player shader state, including the empty ordinary-placement state.
+            ClientboundPostEffectsPacket.class,
+            // Authored server UI/pack/endpoint metadata, like existing authored chat and item text.
+            // Keep request/response semantics intact: in particular, never suppress a required pack.
+            ClientboundResourcePackPushPacket.class, ClientboundResourcePackPopPacket.class,
+            ClientboundCustomReportDetailsPacket.class, ClientboundServerLinksPacket.class,
+            ClientboundClearDialogPacket.class, ClientboundTransferPacket.class,
             net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket.class);
 
     /** Returns a safe replacement, the unchanged safe packet, or null to suppress. */
@@ -220,6 +236,12 @@ public final class PacketFilter {
                     || payload instanceof net.fabricmc.fabric.impl.networking.CommonRegisterPayload
                     || payload instanceof net.fabricmc.fabric.impl.networking.CommonVersionPayload) return packet;
             throw new IllegalStateException("Unsupported custom gameplay payload");
+        }
+        // Cookie bytes and nested dialog action/template schemas have no audited world-data policy.
+        // Disconnect explicitly; dropping these could leave a request/response workflow incoherent.
+        if (packet instanceof ClientboundStoreCookiePacket || packet instanceof ClientboundShowDialogPacket
+                || packet instanceof net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket) {
+            throw new IllegalStateException("Unsupported protected-PLAY cookie/dialog schema: " + packet.getClass().getSimpleName());
         }
         // Debug, tag-query, waypoint, player-look-at, and custom payload paths intentionally fail closed.
         if (PASSTHROUGH.contains(packet.getClass())) return packet;
