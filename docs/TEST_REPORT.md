@@ -1,32 +1,59 @@
 # Private alpha test report
 
-**Date:** October 16, 2026. **Artifact:** `blindstone-0.1.0-alpha.1+mc26.3.jar`.
+**Date:** October 17, 2026. **Artifact:** `blindstone-0.1.0-alpha.1+mc26.3.jar`.
+Implementation source: `9de9b8d7be398f63b5847fe9d81905d88a26192a` on `codex/development`, compared with reviewed source `4ea6c45bda39b757a9243f1398f81719d6147215`.
 Normal startup enables filtering and player admission after mandatory hooks/configuration validate. The isolated development test mode still denies outside logins.
 
 ## Confirmed local results
 
 | Check | Result |
 | --- | --- |
-| Clean build and transformed Minecraft tests | PASS — `./gradlew --offline --no-daemon clean build runGametest` |
-| Blindstone tests | **105 passed**, zero failures/errors; vanilla `always_pass` makes **106 total** |
+| Clean build and transformed Minecraft tests | PASS — `./gradlew --no-daemon clean build runGametest prepareAdmission`; `BUILD SUCCESSFUL in 14s` |
+| Blindstone tests | **121 passed**, zero failures/errors; vanilla `always_pass` makes **122 total**, parsed from actual XML |
 | Original chunk/mask/state/readiness tests | 19 passed |
 | Geometry and resumable visibility | 22 passed |
 | Packet policies and vanilla codecs | 30 passed |
 | Reference/incremental lighting and scheduler | 12 passed |
 | Configuration and diagnostic lifecycle | 8 passed |
-| Transformed Connection/runtime routes | 6 passed |
+| Transformed Connection/runtime routes | 21 passed |
 | Deferred gameplay pipeline | 6 passed |
-| Actual loopback TCP PLAY transport | 2 passed |
+| Actual loopback TCP PLAY transport | 3 passed |
 | Artifact verification | PASS — exact dependency pins, server-only metadata, Java 25 classes, mandatory hooks, no test classes in JAR |
-| Normal dedicated-server development run | PASS — no development flag, loopback-only disposable flat world, startup completed and status reported `ENFORCING` / admission `OPEN` |
-| Console administration | PASS — status, verify, reload, sanitized report, disable warning, explicit disable confirmation, disabled status and clean stop |
-| GitHub CI | Workflow present; this local checkpoint has not been uploaded or run remotely |
+| Installed production-JAR admission | PASS — no development flag; real handshake, offline login, configuration/32 registries, ordinary placement, chunks and keepalives; two independent viewers plus rejoin |
+| Normal runtime lifecycle | PASS — vanilla post-effect commands, death/respawn request, Nether/Overworld travel, active-viewer reload, status/report and clean stop |
+| Development isolation control | PASS — installed JAR with isolation flag rejects external login before world delivery |
+| GitHub CI | Workflow includes the full admission and development-denial harnesses; local results here do not claim a remote run |
 
 Toolchain: Minecraft 26.3, Fabric Loader 0.19.5, Fabric API 0.163.0+26.3, Loom 1.17.14, Gradle 9.6.1 and Homebrew OpenJDK 25.0.4.1 on macOS ARM64. Tests used the pinned Fabric stack without optimization mods.
 
-Artifact SHA-256: `cfa3e4ff3223f6e97c0df11fe73f0254152721ba3ec1c61cba2dee9886e49b2e`.
+Artifact SHA-256: `a2995097d88ef475eb966da9e99d4b604d0fdadb8a3ddfdedc25b46f0b04c0a7`.
 
-Machine-readable local results: `build/gametest-results.xml`. Generated run directories/logs are ignored. The normal boot used Loom's main-source development launch, not an independently installed production-server distribution. Its offline authentication setting and ephemeral loopback port were confined to the disposable smoke world; authenticated admission is not established by it.
+Machine-readable tracked summary: [login-remediation-2026-10-17.json](evidence/login-remediation-2026-10-17.json). Full local evidence is under `build/verification`, including RED/GREEN XML, build logs, admission results/server logs/properties/configuration and the runtime report. Generated evidence is ignored and a clean build removes it; each fresh harness run prints its UUID evidence directory under `build/admission`.
+
+The final admission run used the extracted production Minecraft server with Fabric Loader, only the installed Blindstone/Fabric API JARs in `mods`, and `fabric.development=false`. No GameTest/companion mod or shared client/server registries were used. Offline authentication and ephemeral loopback ports were confined to new disposable worlds. No authenticated or proxy traversal is established.
+
+## Reproduction and RED controls
+
+With the pinned Java 25 JDK on `JAVA_HOME`:
+
+```sh
+./gradlew --no-daemon clean build runGametest prepareAdmission
+python3 scripts/verify_jar.py
+python3 scripts/test_admission.py
+python3 scripts/test_admission.py --development-denial
+git diff --check
+```
+
+All commands passed locally. The preparation task was also rerun after confining its utility logs to `build`; it passed and the artifact hash remained identical.
+
+| Regression control | Actual expected RED result | GREEN evidence |
+| --- | --- | --- |
+| New empty/nonempty vanilla post-effects and common-policy fixtures against original filter | 112 XML cases, 3 failures, 0 errors | All 122 final cases pass |
+| Suppressed-frame flush before repair | 113 XML cases, 1 failure, 0 errors: earlier unflushed frame not published | Frame and both callbacks delivered |
+| Intercepted-light flush with only its repair removed | 122 XML cases, 1 failure, 0 errors | Frame and both callbacks delivered |
+| Ordinary login using original reviewed `PacketFilter` compiled into a control production JAR | Harness FAIL during placement; socket closes; server logs `Unaudited outgoing packet: net.minecraft.network.protocol.common.ClientboundPostEffectsPacket`, with `sendPostEffects` / `placeNewPlayer` stack | Clean-built installed production JAR completes admission and lifecycle |
+
+The control JAR contains the reviewed filter with the other current hook changes; it is a targeted mutation control, not a byte-identical reconstruction of the historical artifact. Its RED evidence is `build/verification/admission-red`. Restore/keep the fixed source before building the deliverable. Baseline failures were recorded before each repair or by removing only the specific repair and immediately restoring it.
 
 ## What the tests establish
 
@@ -42,17 +69,28 @@ Machine-readable local results: `build/gametest-results.xml`. Generated run dire
 
 **Actual TCP:** Two localhost NIO sockets use vanilla framing, packet encoders/decoders and PLAY protocols to inspect independent filtered block/bundle output, hidden block-entity suppression and source callbacks. A second fixture decodes a deferred full chunk, every section, accepted body state, concealed distant air and light mask/array counts. Server and client share in-process registry access and enter PLAY directly. These fixtures explicitly bypass login, account authentication and configuration/registry exchange; they are not retail graphical clients.
 
-**Configuration/readiness/admin:** Strict complete JSON validation, atomic defaults/reports, immutable configuration, validation-before-invalidation, callback retention across reload, hook marker/accessor checks and exact console source identity are covered. The normal-server smoke run exercised the console commands with no connected viewers. Active-player command transitions have narrower automated pipeline coverage and still need operational acceptance. Runtime reports keep hook loading, observed/enforced paths and imported automated/live evidence distinct; this test report does not automatically mark a production server as live-tested.
+The third TCP fixture round-trips empty/nonempty post effects, required resource-pack push with prompt, pop, nonempty report details/server link, clear-dialog and transfer packets, preserving fields/order and completing all callbacks after an explicit flush. It verifies codecs, not actual resource downloading, shader rendering or destination traversal.
+
+**Ordinary admission:** `scripts/test_admission.py` uses protocol IDs extracted from the exact pinned runtime and independent socket clients. Each client declares no known packs, receives and parses 32 complete network registries, acknowledges configuration, receives PLAY login/post effects, acknowledges 26.3 teleport positions/rotation and chunk batches, and decodes every received chunk section and light mask/array. The controlled flat world has a sealed air chamber and real diamond ore at `(8,20,8)`. Both surface viewers receive stone for the ore and chamber air. Moving only the first viewer inside reveals the real diamond/air there while the other viewer retains stone.
+
+The final normal run observed **20 seconds / 400 server ticks** with both independent viewers connected and one normal PLAY keepalive response each. It decoded 99/98 full chunks for the initial viewers and 9 on rejoin. Initial placement, nonempty/cleared effects, serverbound death-respawn, leaving/returning to Overworld, active reload and same-identity disconnect/rejoin passed. Every join received the optional configuration resource pack and explicitly replied DECLINED; the server correctly continued admission. Nonempty server links were decoded. No resource pack was downloaded/applied. No unexpected client disconnect reason was recorded; the disposable server exited 0.
+
+Normal evidence: `build/verification/admission-green/{result.json,server.log,server.properties,blindstone.json,runtime-report.json}`. Development-denial evidence: `build/verification/development-green/{result.json,server.log}`. Each result records versions, mode, exact launch command, observation interval, packet counts, payload IDs and any client failure. The development negative control deliberately records the expected login rejection; its server also exits 0.
+
+**Common packets, payloads and threads:** The [compatibility audit](COMPATIBILITY.md) documents exact common schemas/client actions/send sites, codec-generated bundle delimiters, all baseline Fabric API payload families and the unsupported cookie/dialog/modded routes. New transformed tests cover schema identity versus same-name opaque payloads, off-thread world rejection in protected/unprotected dimensions, off-thread keepalive success and callback success/suppression/exception/disconnect/reload. Only immutable listener server ownership is read before the thread guard. The unknown-packet default and all concealment boundaries remain fail-closed.
+
+**Configuration/readiness/admin:** Strict complete JSON validation, atomic defaults/reports, immutable configuration, validation-before-invalidation, callback retention across reload, hook marker/accessor checks and exact console source identity are covered. The October 16 empty-server smoke covered the console disable warning/confirmation and disabled status. The current installed-JAR admission run additionally covers status/report and reload with connected viewers. Active-load/manual-disable acceptance remains incomplete. Runtime reports keep hook loading, observed/enforced paths and imported automated/live evidence distinct; this test report does not automatically mark a production server as live-tested.
 
 ## Measurements and remaining acceptance
 
-The controlled range-4 pipeline fixtures used manually advanced runtime steps, a 50 ms work allowance and one/two embedded viewers. In the final run they completed their selected conditions in 1–2 steps; recorded fixture wall times ranged from 2.2 to 19.0 ms and the largest measured individual step was 10.4 ms. The TCP tests completed in 0.112 s and 0.024 s in the test runner. These are synthetic fixture measurements, **not** first-login/reveal latency, sustained throughput, added-tick percentiles or SMP capacity. Defaults use range 16 and a 15 ms measured-work guard, which is not a hard whole-server tick deadline.
+The admission harness used default Blindstone settings: range 16, Y<64, fixed 1/16-block body margin and 15 ms measured-work guard; server view/simulation distance 2, one controlled flat world and two active viewers. The development-denial control ran in a separate disposable world. This is correctness evidence, **not** first-login/reveal latency, sustained throughput, tick percentiles or SMP capacity. Existing range-4/50 ms manually stepped pipeline fixtures remain synthetic tests. The configured work guard is not a hard whole-server tick deadline.
 
 Before broad/public distribution, complete:
 
-- Ordinary-client login/configuration and rendered gameplay: mining, building, combat, projectiles, cameras, tiny openings, vehicles, supported fast travel, teleport, respawn, dimension changes and reconnects.
+- Online account authentication, exact FabricProxy-Lite artifact/proxy forwarding and supported integration-stack traversal.
+- Rendered gameplay: mining, building, combat, projectiles, cameras, tiny openings, vehicles and supported fast travel; graphical confirmation of automated lifecycle paths.
 - Adversarial minimap/X-ray/freecam/ESP inspection and exact profiler comparisons for matched present/absent fixtures.
 - Representative multiplayer load, memory, network bytes, first-chunk/reveal delay and tick percentiles; systematic overload/fault injection.
 - Operational reload/disable tests with active clients and explicit compatibility tests for each optimization or alternate networking stack.
 
-Unsupported debug/tag-query/locator/look-at paths remain suppressed, arbitrary custom gameplay payloads disconnect, and some visual effects are sanitized. Visible authored text/items, players, ordinary sounds, public terrain/biomes and prior downloaded knowledge remain available information. See [packet coverage](PACKET_COVERAGE.md) and [implementation](IMPLEMENTATION.md). This is a runnable private alpha with the above evidence boundaries, not a production protection or performance claim.
+Unsupported debug/tag-query/locator/look-at paths remain suppressed; opaque protected-PLAY cookies, show-dialog schemas and arbitrary custom gameplay payloads disconnect. Unsupported asynchronous non-transport PLAY sends also disconnect before dimension policy. Visible authored text/items, players, ordinary sounds, public terrain/biomes and prior knowledge remain available information. See [packet coverage](PACKET_COVERAGE.md), [compatibility](COMPATIBILITY.md) and [implementation](IMPLEMENTATION.md). No Hub integration, existing service/configuration change, deployment or release was performed. This is a private alpha with the stated evidence boundaries, not a production-readiness or exhaustive bug-free claim.

@@ -1,0 +1,357 @@
+{
+  "date": "2026-10-17",
+  "source_commit": "9de9b8d7be398f63b5847fe9d81905d88a26192a",
+  "reviewed_commit": "4ea6c45bda39b757a9243f1398f81719d6147215",
+  "versions": {
+    "minecraft": "26.3",
+    "protocol": 777,
+    "java": "Homebrew OpenJDK 25.0.4.1",
+    "fabric_loader": "0.19.5",
+    "fabric_api": "0.163.0+26.3",
+    "loom": "1.17.14",
+    "gradle": "9.6.1",
+    "os": "macOS ARM64"
+  },
+  "artifact": {
+    "file": "blindstone-0.1.0-alpha.1+mc26.3.jar",
+    "sha256": "a2995097d88ef475eb966da9e99d4b604d0fdadb8a3ddfdedc25b46f0b04c0a7"
+  },
+  "commands": [
+    "./gradlew --no-daemon clean build runGametest prepareAdmission",
+    "python3 scripts/verify_jar.py",
+    "python3 scripts/test_admission.py",
+    "python3 scripts/test_admission.py --development-denial",
+    "git diff --check"
+  ],
+  "red": {
+    "packet_policy": {
+      "cases": 112,
+      "failures": [
+        "blindstone_tests:runtime_game_tests_ordinary_empty_post_effects_reach_transformed_connection",
+        "blindstone_tests:runtime_game_tests_audited_common_play_packets_preserve_fields_and_completion",
+        "blindstone_tests:runtime_game_tests_nonempty_and_cleared_post_effects_reach_transformed_connection"
+      ],
+      "errors": []
+    },
+    "suppression_flush": {
+      "cases": 113,
+      "failures": [
+        "blindstone_tests:runtime_game_tests_suppressed_flush_publishes_earlier_unflushed_frame"
+      ],
+      "errors": []
+    },
+    "intercepted_light_flush": {
+      "cases": 122,
+      "failures": [
+        "blindstone_tests:runtime_game_tests_intercepted_light_flush_publishes_earlier_frame"
+      ],
+      "errors": []
+    },
+    "admission": {
+      "result": "expected FAIL",
+      "artifact": "reviewed PacketFilter compiled into regression-control JAR; remaining hook changes present",
+      "reason": "Unaudited outgoing packet: net.minecraft.network.protocol.common.ClientboundPostEffectsPacket",
+      "path": "ServerPlayer.sendPostEffects -> PlayerList.placeNewPlayer",
+      "evidence": "build/verification/admission-red/server.log"
+    }
+  },
+  "green": {
+    "gametest": {
+      "cases": 122,
+      "failures": [],
+      "errors": []
+    },
+    "clean_build": "BUILD SUCCESSFUL in 14s; 13 actionable tasks: 11 executed, 2 up-to-date",
+    "jar_verification": "PASS",
+    "diff_check": "PASS",
+    "admission": {
+      "status": "PASS",
+      "mode": "installed production JAR; loopback TCP; offline authentication; no proxy; headless",
+      "port": 65139,
+      "observation_seconds": 20,
+      "observation_ticks": 400,
+      "checks": [
+        "two ordinary handshake/login/configuration/registry/placement joins with empty post effects and concealed ore/air",
+        "nonempty and cleared vanilla post-effect command state decoded in PLAY",
+        "first viewer receives real body cells while second retains stone for the same ore and air",
+        "death and serverbound respawn request return to concealed Overworld chunks",
+        "leave protected dimension and return through real respawn/teleport placement",
+        "active-viewer reload retains concealment",
+        "both independent viewers remain connected for 20s observation and answer normal keepalives",
+        "optional configuration pack is explicitly declined and server-information links received; no pack download/render claim",
+        "same identity disconnect/rejoin performs a new full admission and conceals the former underground view"
+      ],
+      "server_exit": 0
+    },
+    "clients": [
+      {
+        "name": "BlindstoneOne",
+        "seconds": 24.78,
+        "chunks": 99,
+        "keepalives": 1,
+        "effects": [
+          [],
+          [
+            "minecraft:creeper"
+          ],
+          [],
+          [],
+          [],
+          []
+        ],
+        "respawn_dimensions": [
+          "minecraft:overworld",
+          "minecraft:the_nether",
+          "minecraft:overworld"
+        ],
+        "custom_payload_ids": [
+          "configuration:minecraft:brand",
+          "configuration:minecraft:register"
+        ],
+        "pack_responses": [
+          {
+            "phase": "configuration",
+            "url": "https://example.invalid/blindstone-fixture.zip",
+            "hash": "",
+            "action": "DECLINED"
+          }
+        ],
+        "server_links": [
+          {
+            "phase": "configuration",
+            "label": 0,
+            "url": "https://example.invalid/bugs"
+          }
+        ],
+        "error": null,
+        "registry_count": 32,
+        "packets": {
+          "configuration:custom_payload": 2,
+          "configuration:finish_configuration": 1,
+          "configuration:ping": 1,
+          "configuration:registry_data": 32,
+          "configuration:resource_pack_push": 1,
+          "configuration:select_known_packs": 1,
+          "configuration:server_links": 1,
+          "configuration:update_enabled_features": 1,
+          "configuration:update_tags": 1,
+          "login:login_compression": 1,
+          "login:login_finished": 1,
+          "play:add_entity": 3,
+          "play:block_update": 3,
+          "play:bundle_delimiter": 6,
+          "play:change_difficulty": 4,
+          "play:chunk_batch_finished": 21,
+          "play:chunk_batch_start": 21,
+          "play:commands": 4,
+          "play:container_set_content": 4,
+          "play:damage_event": 1,
+          "play:disguised_chat": 11,
+          "play:entity_event": 3,
+          "play:entity_position_sync": 1,
+          "play:game_event": 6,
+          "play:initialize_border": 4,
+          "play:keep_alive": 1,
+          "play:level_chunk_with_light": 99,
+          "play:login": 1,
+          "play:move_entity_pos": 8,
+          "play:player_abilities": 8,
+          "play:player_combat_kill": 1,
+          "play:player_info_update": 5,
+          "play:player_position": 6,
+          "play:post_effects": 6,
+          "play:recipe_book_add": 2,
+          "play:recipe_book_settings": 1,
+          "play:remove_entities": 2,
+          "play:respawn": 3,
+          "play:server_data": 1,
+          "play:set_chunk_cache_center": 4,
+          "play:set_default_spawn_position": 5,
+          "play:set_entity_data": 6,
+          "play:set_experience": 5,
+          "play:set_health": 4,
+          "play:set_held_slot": 3,
+          "play:set_time": 27,
+          "play:system_chat": 5,
+          "play:ticking_state": 4,
+          "play:ticking_step": 4,
+          "play:update_advancements": 2,
+          "play:update_attributes": 7,
+          "play:update_recipes": 1
+        }
+      },
+      {
+        "name": "BlindstoneTwo",
+        "seconds": 23.966,
+        "chunks": 98,
+        "keepalives": 1,
+        "effects": [
+          []
+        ],
+        "respawn_dimensions": [],
+        "custom_payload_ids": [
+          "configuration:minecraft:brand",
+          "configuration:minecraft:register"
+        ],
+        "pack_responses": [
+          {
+            "phase": "configuration",
+            "url": "https://example.invalid/blindstone-fixture.zip",
+            "hash": "",
+            "action": "DECLINED"
+          }
+        ],
+        "server_links": [
+          {
+            "phase": "configuration",
+            "label": 0,
+            "url": "https://example.invalid/bugs"
+          }
+        ],
+        "error": null,
+        "registry_count": 32,
+        "packets": {
+          "configuration:custom_payload": 2,
+          "configuration:finish_configuration": 1,
+          "configuration:ping": 1,
+          "configuration:registry_data": 32,
+          "configuration:resource_pack_push": 1,
+          "configuration:select_known_packs": 1,
+          "configuration:server_links": 1,
+          "configuration:update_enabled_features": 1,
+          "configuration:update_tags": 1,
+          "login:login_compression": 1,
+          "login:login_finished": 1,
+          "play:add_entity": 4,
+          "play:bundle_delimiter": 8,
+          "play:change_difficulty": 1,
+          "play:chunk_batch_finished": 11,
+          "play:chunk_batch_start": 11,
+          "play:commands": 1,
+          "play:container_set_content": 1,
+          "play:damage_event": 1,
+          "play:disguised_chat": 14,
+          "play:entity_event": 1,
+          "play:entity_position_sync": 6,
+          "play:game_event": 1,
+          "play:initialize_border": 1,
+          "play:keep_alive": 1,
+          "play:level_chunk_with_light": 98,
+          "play:login": 1,
+          "play:move_entity_pos": 8,
+          "play:player_abilities": 1,
+          "play:player_info_remove": 1,
+          "play:player_info_update": 5,
+          "play:player_position": 1,
+          "play:post_effects": 1,
+          "play:recipe_book_add": 2,
+          "play:recipe_book_settings": 1,
+          "play:remove_entities": 3,
+          "play:rotate_head": 1,
+          "play:server_data": 1,
+          "play:set_chunk_cache_center": 1,
+          "play:set_default_spawn_position": 1,
+          "play:set_entity_data": 7,
+          "play:set_experience": 1,
+          "play:set_health": 1,
+          "play:set_held_slot": 1,
+          "play:set_time": 25,
+          "play:sound": 1,
+          "play:system_chat": 4,
+          "play:ticking_state": 1,
+          "play:ticking_step": 1,
+          "play:update_advancements": 1,
+          "play:update_attributes": 9,
+          "play:update_recipes": 1
+        }
+      },
+      {
+        "name": "BlindstoneOne",
+        "seconds": 0.534,
+        "chunks": 9,
+        "keepalives": 0,
+        "effects": [
+          []
+        ],
+        "respawn_dimensions": [],
+        "custom_payload_ids": [
+          "configuration:minecraft:brand",
+          "configuration:minecraft:register"
+        ],
+        "pack_responses": [
+          {
+            "phase": "configuration",
+            "url": "https://example.invalid/blindstone-fixture.zip",
+            "hash": "",
+            "action": "DECLINED"
+          }
+        ],
+        "server_links": [
+          {
+            "phase": "configuration",
+            "label": 0,
+            "url": "https://example.invalid/bugs"
+          }
+        ],
+        "error": null,
+        "registry_count": 32,
+        "packets": {
+          "configuration:custom_payload": 2,
+          "configuration:finish_configuration": 1,
+          "configuration:ping": 1,
+          "configuration:registry_data": 32,
+          "configuration:resource_pack_push": 1,
+          "configuration:select_known_packs": 1,
+          "configuration:server_links": 1,
+          "configuration:update_enabled_features": 1,
+          "configuration:update_tags": 1,
+          "login:login_compression": 1,
+          "login:login_finished": 1,
+          "play:add_entity": 1,
+          "play:bundle_delimiter": 2,
+          "play:change_difficulty": 1,
+          "play:chunk_batch_finished": 1,
+          "play:chunk_batch_start": 1,
+          "play:commands": 1,
+          "play:container_set_content": 1,
+          "play:disguised_chat": 2,
+          "play:game_event": 1,
+          "play:initialize_border": 1,
+          "play:level_chunk_with_light": 9,
+          "play:login": 1,
+          "play:player_abilities": 1,
+          "play:player_info_update": 2,
+          "play:player_position": 1,
+          "play:post_effects": 1,
+          "play:recipe_book_add": 1,
+          "play:recipe_book_settings": 1,
+          "play:server_data": 1,
+          "play:set_chunk_cache_center": 1,
+          "play:set_default_spawn_position": 1,
+          "play:set_entity_data": 2,
+          "play:set_experience": 1,
+          "play:set_health": 1,
+          "play:set_held_slot": 1,
+          "play:set_time": 1,
+          "play:ticking_state": 1,
+          "play:ticking_step": 1,
+          "play:update_advancements": 1,
+          "play:update_attributes": 3,
+          "play:update_recipes": 1
+        }
+      }
+    ],
+    "development_denial": "PASS; external login denied before world delivery; clean server exit"
+  },
+  "evidence_directory": "build/verification",
+  "not_tested": [
+    "graphical rendering and controls",
+    "online account authentication",
+    "FabricProxy-Lite or proxy forwarding/traversal",
+    "arbitrary backend/optimization mod sets",
+    "adversarial clients or matched profilers",
+    "representative SMP capacity/performance",
+    "systematic fault injection and active-client disable"
+  ],
+  "operations": "Only disposable loopback offline test worlds; no Hub integration, service changes, deployment, main merge or release"
+}
