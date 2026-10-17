@@ -40,11 +40,17 @@ public final class ChunkFilter {
                 continue;
             }
             SectionVisibility mask = masks.getOrDefault(sectionY, SectionVisibility.none());
+            if (mask.count() == SectionVisibility.BLOCK_COUNT) {
+                view.getSections()[i] = source.copy();
+                continue;
+            }
             // Never copy the original block palette: unused entries would reveal hidden content.
             var initial = mask.isRevealed(0, 0, 0) ? source.getBlockState(0, 0, 0)
                     : policy.replacement(sectionY * 16);
             var states = new PalettedContainer<>(initial, level.palettedContainerFactory().blockStatesStrategy());
-            for (int y = 0; y < 16; y++) {
+            // Section-aligned replacements are uniform. Fully hidden sections need no 4096-cell
+            // palette rebuild, which is the common case underneath an exterior-only chunk.
+            if (mask.count() != 0) for (int y = 0; y < 16; y++) {
                 for (int z = 0; z < 16; z++) {
                     for (int x = 0; x < 16; x++) {
                         states.getAndSetUnchecked(x, y, z, mask.isRevealed(x, y, z)

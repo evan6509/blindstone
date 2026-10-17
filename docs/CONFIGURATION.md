@@ -56,6 +56,10 @@ Every field shown above is required. Unknown, duplicate, missing, mistyped, frac
 
 The lower bound always comes from the world's actual minimum height. For a world with minimum Y=-64, defaults protect `minecraft:overworld Y[-64,64)`; Y=64 is outside protection. `/blindstone status` and reports show the effective bounds. Replacement choices are independent of real terrain, ores, caves, and player construction.
 
+The protected band excludes public exterior cells: vertical columns open to the sky through air, foliage, clear water and glass, their first blocking surface, and first faces immediately beside those open columns. These cells arrive correctly in the initial chunk even beyond the 16-block underground reveal range. Covered interiors and deeper caves still require individual visibility. Sky-open shafts are an explicit public disclosure; the exterior pass does not flood through a connected cave. Opaque overhangs can still require local sight checks. This is a fixed policy, with no new configuration fields or changes needed to an existing configuration file.
+
+Exterior masks are cached across viewers (at most 1024 chunk entries) and kept separate from accumulated private knowledge. Adding a roof can therefore conceal a previously outdoor interior for a distant viewer. Terrain already downloaded by a client cannot be erased. Relevant edits and chunk load/unload invalidate the cache and matching pending lighting.
+
 The movement exception may disclose a neighboring cell when the accepted body nearly touches its wall. It never expands under load. Accepted player and root-vehicle bodies are bounded to 4×4×4 blocks, with a fixed 1/16-block margin. A normal runtime path is limited to 16 blocks between evaluations. Its straight swept body corridor connects the accepted endpoints; it does not reconstruct intermediate axis-resolved bends. At most 8192 safety cells are scanned; larger bodies, paths or unavailable destination chunks fail closed. Explicit lifecycle resets rebase the previous body instead of enlarging the envelope.
 
 ## Budgets and their limits

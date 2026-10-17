@@ -153,7 +153,15 @@ public final class VisibilityEvaluator {
     public static Job createJob(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range) {
         checkRange(range);
         if (!geometry.hasSightGeometry()) throw new IllegalArgumentException("Availability-only body snapshot cannot authorize sight");
-        return new Job(geometry, view, policy, range);
+        return new Job(geometry, view, policy, range, Map.of());
+    }
+
+    /** Already public/delivered cells need no new sight authorization or ray work. */
+    public static Job createJob(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range,
+            Map<Long, Map<Integer, SectionVisibility>> known) {
+        checkRange(range);
+        if (!geometry.hasSightGeometry()) throw new IllegalArgumentException("Availability-only body snapshot cannot authorize sight");
+        return new Job(geometry, view, policy, range, known);
     }
 
     /** Independently refresh this fixed body envelope each tick while an older sight job progresses. */
@@ -228,7 +236,8 @@ public final class VisibilityEvaluator {
         private int sample;
         private RayCursor ray;
 
-        private Job(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range) {
+        private Job(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range,
+                Map<Long, Map<Integer, SectionVisibility>> known) {
             this.geometry = geometry;
             this.view = view;
             safetyComplete = safety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), null)), MAX_MOVEMENT_SEGMENT), policy, safetyBits);
@@ -237,7 +246,9 @@ public final class VisibilityEvaluator {
             BlockPos center = BlockPos.containing(view.eyes());
             for (int y = -range; y <= range; y++) for (int z = -range; z <= range; z++) for (int x = -range; x <= range; x++) {
                 BlockPos pos = center.offset(x, y, z);
-                if (policy.protects(pos.getY()) && Vec3.atCenterOf(pos).distanceToSqr(view.eyes()) <= range * range)
+                if (policy.protects(pos.getY()) && Vec3.atCenterOf(pos).distanceToSqr(view.eyes()) <= range * range
+                        && !known.getOrDefault(ChunkPos.pack(pos), Map.of()).getOrDefault(pos.getY() >> 4, SectionVisibility.none())
+                            .isRevealed(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15))
                     candidates.add(pos);
             }
             candidates.sort(Comparator.comparingDouble(pos -> Vec3.atCenterOf(pos).distanceToSqr(view.eyes())));

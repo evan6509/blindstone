@@ -16,12 +16,14 @@ Use a separate test server or a copy of your world for the alpha's gameplay acce
 ## Current behavior
 
 - The default protected range is world minimum through **Y<64**, using stone at Y≥0 and deepslate below zero. Concealment includes air, fluids, ores, storage and other underground construction.
+- Outdoor air, clear water columns, and the first sky-visible terrain surfaces are preserved in the initial chunk, including below Y=64. Adjacent exterior faces are public too; this does not flood through covered rooms or connected caves. Directly sky-open shafts and terrain beneath foliage/glass are public clues.
 - Shape-aware sight runs in all directions from the accepted server position, including constrained third-person offsets. Authorization is per block, not per cave, section, or chunk.
 - A small body and accepted-movement envelope reveals nearby cells immediately. This explicit safety exception can disclose cells just across a wall; it stays fixed under load.
 - Full chunk data, later block/entity updates, bundles and direct vanilla send paths are filtered. Section palettes, counts, block entities and heightmaps describe the filtered representation.
 - Filtered lighting is reconstructed incrementally and published with matching chunk views. Visible torches illuminate revealed air; concealed sources cannot supply protected light. Safe upper-world light is preserved using a documented attenuation bound.
 - Non-player tracking and packet field adapters withhold concealed entities and references. Player entities and ordinary audible activity remain available.
 - Work, queues, masks, light jobs and light caches are bounded. Unsafe or unsupported delivery disconnects the affected viewer instead of reverting to real hidden data.
+- Exterior columns/masks are cached across viewers. Flying beyond underground reveal range skips sight-geometry capture; public surface cells do not create private reveal resends. Fully concealed sections use a uniform palette without scanning all 4096 blocks.
 
 [Configuration and commands](docs/CONFIGURATION.md), [packet coverage](docs/PACKET_COVERAGE.md), and [implementation details](docs/IMPLEMENTATION.md) describe the current policies and limits. The [specification](docs/Blindstone-Spec.md) remains the product target, not a statement that every acceptance scenario has passed.
 

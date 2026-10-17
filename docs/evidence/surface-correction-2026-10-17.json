@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-17",
+  "source_base": "95a99794cc6b90071130da2df09396858cb86bc0",
+  "source_state": "Surface correction in the working tree on codex/development",
+  "artifact": "build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar",
+  "artifact_sha256": "a79d9a2885acecf85a35a16a06f2aea46c162eced56030d5ad011f96ad2b452e",
+  "gametest": {
+    "total": 126,
+    "blindstone": 125,
+    "failures": 0,
+    "errors": 0,
+    "new_regressions": [
+      "flying surface air, plants, water and cliff faces; buried content isolation; no overhead sight captures/resends",
+      "roof invalidates a previously frozen exterior before initial chunk publication",
+      "roofed yard does not inherit permanent private authorization; sky-open shaft refresh",
+      "cross-query surface cache reuse and bounded first-face exposure"
+    ]
+  },
+  "artifact_verification": "PASS",
+  "production_admission": {
+    "status": "PASS",
+    "evidence": "build/admission/0d8999b2-0dca-4303-a8f9-e4fd32a9c4d2/result.json",
+    "observation_seconds": 20,
+    "observation_ticks": 393,
+    "server_exit": 0,
+    "checks": [
+      "two ordinary handshake/login/configuration/registry/placement joins with empty post effects and concealed ore/air",
+      "nonempty and cleared vanilla post-effect command state decoded in PLAY",
+      "first viewer receives real body cells while second retains stone for the same ore and air",
+      "death and serverbound respawn request return to concealed Overworld chunks",
+      "leave protected dimension and return through real respawn/teleport placement",
+      "active-viewer reload retains concealment",
+      "both independent viewers remain connected for 20s observation and answer normal keepalives",
+      "optional configuration pack is explicitly declined and server-information links received; no pack download/render claim",
+      "same identity disconnect/rejoin performs a new full admission and conceals the former underground view"
+    ]
+  },
+  "limits": [
+    "No deployment or live graphical verification on the user server",
+    "No measured whole-server performance improvement or SMP capacity claim",
+    "Sky-open shafts and first neighboring exterior faces are public; wide opaque overhangs still use local sight",
+    "Development-denial control was not rerun for this correction"
+  ]
+}

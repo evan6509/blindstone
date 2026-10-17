@@ -121,6 +121,15 @@ public final class LiveConnectionGameTests {
         }
         if (hidden == null) { fixture.close(); throw new IllegalStateException("TCP fixture needs protected real air beyond the maximum reveal range"); }
         final BlockPos distantAir = hidden;
+        // Outdoor air is public even below the cutoff. Explicitly cover this fixture's distant
+        // air so the real TCP regression continues to exercise concealed underground geometry.
+        var roof = new java.util.LinkedHashMap<BlockPos, BlockState>();
+        for (int z = -2; z <= 2; z++) for (int x = -2; x <= 2; x++) {
+            var pos = distantAir.offset(x, 1, z);
+            roof.put(pos, helper.getLevel().getBlockState(pos));
+            helper.getLevel().setBlock(pos, Blocks.STONE.defaultBlockState(), 2);
+        }
+        helper.runBeforeTestEnd(() -> roof.forEach((pos, state) -> helper.getLevel().setBlock(pos, state, 2)));
         var source = new ClientboundLevelChunkWithLightPacket(chunk, helper.getLevel().getLightEngine(), null, null);
         var completed = new AtomicBoolean();
         fixture.serverConnection.send(source, future -> completed.set(future.isSuccess()));
@@ -139,7 +148,7 @@ public final class LiveConnectionGameTests {
                     "The decoded initial chunk must contain the accepted body's true block state");
             helper.assertTrue(chunk.getBlockState(distantAir).isAir(), "Controlled distant source cell must be real air");
             helper.assertTrue(readBlock(helper, packet, distantAir).equals(policy.replacement(distantAir.getY())),
-                    "Decoded distant protected air must remain replacement terrain");
+                    "Decoded distant covered air must remain replacement terrain");
             helper.assertTrue(packet.lightData().skyYMask().cardinality() == packet.lightData().skyUpdates().size()
                     && packet.lightData().blockYMask().cardinality() == packet.lightData().blockUpdates().size(),
                     "Actual wire light masks must match their decoded array counts");

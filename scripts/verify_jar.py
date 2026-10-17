@@ -38,7 +38,7 @@ def main():
         prefix = "com/evanchubbuck/blindstone/"
         for name in ["BlindstoneMod", "ChunkFilter", "ConcealmentPolicy", "SectionVisibility", "ViewerState", "mixin/PlayerListMixin",
                      "mixin/ConnectionMixin", "mixin/ChunkMapMixin", "mixin/TrackedEntityMixin", "mixin/LevelChunkMixin",
-                     "runtime/BlindstoneRuntime", "network/PacketFilter", "visibility/GeometrySnapshot", "visibility/VisibilityEvaluator",
+                     "runtime/BlindstoneRuntime", "network/PacketFilter", "visibility/GeometrySnapshot", "visibility/VisibilityEvaluator", "visibility/SurfaceVisibility",
                      "config/ConfigManager", "config/BlindstoneConfig", "diagnostics/BlindstoneDiagnostics", "HookReadiness",
                      "network/FilteredLight", "network/LightScheduler", "network/EntityPolicy", "mixin/CommandSourceAccess",
                      "mixin/HookReadinessMixin", "mixin/PlayerChunkSenderMixin"]:

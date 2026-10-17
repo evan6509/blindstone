@@ -29,8 +29,17 @@ public final class SectionVisibility {
     public int count() { return revealed.cardinality(); }
 
     public SectionVisibility union(SectionVisibility other) {
+        if (other.count() == 0 || this == other) return this;
+        if (count() == 0) return other;
         BitSet combined = (BitSet) revealed.clone();
         combined.or(other.revealed);
         return new SectionVisibility(combined);
+    }
+
+    public SectionVisibility subtract(SectionVisibility other) {
+        if (other.count() == 0 || count() == 0) return this;
+        BitSet remaining = (BitSet) revealed.clone();
+        remaining.andNot(other.revealed);
+        return remaining.isEmpty() ? NONE : new SectionVisibility(remaining);
     }
 }

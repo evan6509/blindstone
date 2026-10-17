@@ -104,6 +104,8 @@ Use a chunk/session revision to reject work calculated before block changes, tel
 
 ### 5.4 Reveal rules
 
+The October 17 surface correction treats directly sky-exposed columns and their first neighboring faces as public exterior data in the initial chunk, independently of player distance. Air, foliage, clear water and transparent glass transmit this exterior test; opaque and partial sight blockers stop it. Directly sky-open shafts are public clues. This exception must not recursively reveal covered rooms or connected caves, and public exterior masks must remain separate from accumulated per-viewer underground knowledge. A new roof must invalidate the exterior view and pending light before publication. Other underground reveal decisions follow the rules below.
+
 Reveal decisions use the server-accepted player position and real server geometry. Never trust a client-reported camera location or freecam position.
 
 - Evaluate visibility around the player in all directions to accommodate normal camera movement and third-person play; do not rely exclusively on view direction.

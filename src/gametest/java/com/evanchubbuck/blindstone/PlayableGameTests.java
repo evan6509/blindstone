@@ -47,6 +47,163 @@ import org.slf4j.LoggerFactory;
 /** Actual transformed send/defer/reconstruct/publish pipeline with decoded vanilla output. */
 public final class PlayableGameTests {
     @GameTest
+    public void flyingViewerReceivesGrassWaterAndAirBeforeApproaching(GameTestHelper helper) throws Exception {
+        try (var settings = new Settings(helper); var terrain = new Terrain(helper.getLevel())) {
+            var ground = center(helper, 55);
+            exteriorYard(terrain, ground);
+            terrain.put(ground.above(), Blocks.SHORT_GRASS.defaultBlockState());
+            var cliff = ground.offset(3, -2, 0);
+            terrain.put(cliff, Blocks.DIRT.defaultBlockState());
+            terrain.put(cliff.west(), Blocks.DIAMOND_ORE.defaultBlockState());
+            var water = ground.offset(2, 4, 2);
+            for (int y = 1; y <= 4; y++) terrain.put(ground.offset(2, y, 2), Blocks.WATER.defaultBlockState());
+            terrain.put(ground.above(15), Blocks.OAK_LEAVES.defaultBlockState());
+            var buriedChest = ground.below(4);
+            var buriedTorch = buriedChest.east();
+            terrain.put(buriedChest, Blocks.CHEST.defaultBlockState());
+            terrain.put(buriedTorch, Blocks.TORCH.defaultBlockState());
+            try (var viewer = new Viewer(helper, ground.atY(120))) {
+                var before = geometrySamples(settings.runtime);
+                viewer.connection.send(viewer.source());
+                drive(helper, settings.runtime, List.of(viewer), () -> !viewer.chunks().isEmpty(), "flying-surface-first-chunk");
+                var packet = viewer.chunks().getFirst();
+                helper.assertTrue(block(helper.getLevel(), packet, ground).is(Blocks.GRASS_BLOCK),
+                        "Distant ground under a leaf canopy must be real grass in the first chunk");
+                helper.assertTrue(block(helper.getLevel(), packet, ground.atY(63)).isAir(),
+                        "Outdoor air below the cutoff must not become a stone sheet");
+                helper.assertTrue(block(helper.getLevel(), packet, ground.above()).is(Blocks.SHORT_GRASS)
+                                && block(helper.getLevel(), packet, cliff).is(Blocks.DIRT)
+                                && block(helper.getLevel(), packet, cliff.west()).is(Blocks.STONE),
+                        "Surface plants and exposed cliff faces must survive without revealing ore behind the cliff");
+                helper.assertTrue(block(helper.getLevel(), packet, water).is(Blocks.WATER)
+                                && block(helper.getLevel(), packet, water.below(3)).is(Blocks.WATER),
+                        "The complete clear water column must remain water instead of a fake stone cap");
+                helper.assertTrue(light(helper.getLevel(), packet.lightData(), water, true) > 0,
+                        "The exposed water must have matching reconstructed skylight");
+                helper.assertTrue(block(helper.getLevel(), packet, buriedChest).is(Blocks.STONE)
+                                && !tags(packet).contains(buriedChest)
+                                && light(helper.getLevel(), packet.lightData(), buriedTorch, false) == 0,
+                        "Public surface geometry must not reveal a buried chest or torch");
+                assertHeightmap(helper, packet, water);
+                helper.assertTrue(geometrySamples(settings.runtime) == before,
+                        "A viewer flying beyond underground sight range must do no sight geometry captures");
+                int delivered = viewer.chunks().size();
+                for (int i = 0; i < 4; i++) {
+                    viewer.player.setPos(viewer.player.getX() + 0.5, 120, viewer.player.getZ());
+                    settings.runtime.beginTick(); settings.runtime.refresh(helper.getLevel()); viewer.pump();
+                }
+                helper.assertTrue(viewer.chunks().size() == delivered && geometrySamples(settings.runtime) == before,
+                        "Flying over unchanged public terrain must not schedule underground reveals or chunk resends");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void frozenPublicSurfaceIsRevokedBeforeInitialChunkPublication(GameTestHelper helper) throws Exception {
+        try (var settings = new Settings(helper); var terrain = new Terrain(helper.getLevel())) {
+            var ground = center(helper, 55);
+            exteriorYard(terrain, ground);
+            var chest = ground.above(2);
+            terrain.put(chest, Blocks.CHEST.defaultBlockState());
+            try (var viewer = new Viewer(helper, ground.atY(120))) {
+                var source = viewer.source();
+                viewer.connection.send(source);
+                Object session = session(viewer);
+                var field = session.getClass().getDeclaredField("pending"); field.setAccessible(true);
+                Object pending = ((Map<?, ?>) field.get(session)).get(ChunkPos.pack(chest));
+                var freeze = BlindstoneRuntime.class.getDeclaredMethod("frozen", session.getClass(), pending.getClass());
+                freeze.setAccessible(true);
+                var old = (com.evanchubbuck.blindstone.network.PacketFilter.Context) freeze.invoke(viewer.runtime, session, pending);
+                helper.assertTrue(old.isAuthorized(chest) && viewer.chunks().isEmpty(),
+                        "The fixture must freeze a public chest before delivering any terrain");
+                for (int z = -2; z <= 2; z++) for (int x = -2; x <= 2; x++)
+                    terrain.put(ground.offset(x, 7, z), Blocks.OAK_PLANKS.defaultBlockState());
+                drive(helper, settings.runtime, List.of(viewer), () -> !viewer.chunks().isEmpty(), "roof-invalidates-frozen-exterior");
+                for (var packet : viewer.chunks()) helper.assertTrue(block(helper.getLevel(), packet, chest).is(Blocks.STONE)
+                                && !tags(packet).contains(chest),
+                        "A newly opaque roof must invalidate old exterior/chunk/light authorization before publication");
+                helper.assertTrue(block(helper.getLevel(), source, chest).is(Blocks.CHEST),
+                        "The shared original packet must retain the real chest while its filtered output conceals it");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void roofingAnExposedYardDoesNotPermanentlyAuthorizeItsInterior(GameTestHelper helper) throws Exception {
+        try (var settings = new Settings(helper); var terrain = new Terrain(helper.getLevel())) {
+            var ground = center(helper, 55);
+            exteriorYard(terrain, ground);
+            try (var viewer = new Viewer(helper, ground.atY(120))) {
+                viewer.connection.send(viewer.source());
+                drive(helper, settings.runtime, List.of(viewer), () -> !viewer.chunks().isEmpty(), "public-yard-before-roof");
+                var chest = ground.above(2);
+                helper.assertTrue(block(helper.getLevel(), viewer.chunks().getFirst(), chest).isAir(),
+                        "The yard starts as public outdoor air");
+                for (int z = -2; z <= 2; z++) for (int x = -2; x <= 2; x++)
+                    terrain.put(ground.offset(x, 7, z), Blocks.OAK_PLANKS.defaultBlockState());
+                terrain.put(chest, Blocks.CHEST.defaultBlockState());
+                final int beforeRoof = viewer.chunks().size();
+                viewer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(chest, Blocks.CHEST.defaultBlockState()));
+                viewer.pump();
+                helper.assertTrue(viewer.history.stream().filter(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket.class::isInstance)
+                        .map(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket.class::cast)
+                        .filter(update -> update.getPos().equals(chest)).allMatch(update -> update.getBlockState().is(Blocks.STONE)),
+                        "A new covered chest cannot inherit permanent private authorization from former outdoor air");
+                drive(helper, settings.runtime, List.of(viewer), () -> viewer.chunks().size() > beforeRoof, "public-yard-after-roof");
+                var packet = viewer.chunks().getLast();
+                helper.assertTrue(block(helper.getLevel(), packet, chest).is(Blocks.STONE) && !tags(packet).contains(chest),
+                        "The refreshed chunk and block-entity list must conceal the newly covered interior");
+                terrain.put(ground.above(7), Blocks.AIR.defaultBlockState());
+                final int roofedCount = viewer.chunks().size();
+                drive(helper, settings.runtime, List.of(viewer), () -> viewer.chunks().size() > roofedCount, "sky-open-shaft-after-roof-removal");
+                packet = viewer.chunks().getLast();
+                helper.assertTrue(block(helper.getLevel(), packet, chest).is(Blocks.CHEST) && tags(packet).contains(chest),
+                        "Opening a direct sky column must invalidate the cache and expose its first chest surface");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void surfaceCacheReusesColumnsAndDoesNotFloodCoveredRooms(GameTestHelper helper) throws Exception {
+        try (var terrain = new Terrain(helper.getLevel())) {
+            var ground = center(helper, 55);
+            exteriorYard(terrain, ground);
+            var policy = new ConcealmentPolicy(helper.getLevel().getMinY(), 64);
+            var cache = new com.evanchubbuck.blindstone.visibility.SurfaceVisibility(helper.getLevel());
+            var chunk = ChunkPos.containing(ground);
+            var first = cache.masks(chunk, policy);
+            long captured = cache.captures();
+            helper.assertTrue(first == cache.masks(chunk, policy) && cache.captures() == captured,
+                    "Unchanged chunks must reuse exterior masks and captured columns across queries");
+            for (int z = -3; z <= 3; z++) for (int x = -3; x <= 3; x++)
+                terrain.put(ground.offset(x, 7, z), Blocks.OAK_PLANKS.defaultBlockState());
+            cache.invalidate(chunk);
+            helper.assertTrue(!cache.isExposed(ground.above(3), policy), "An opaque roof must stop the vertical exterior pass");
+            terrain.put(ground.above(7), Blocks.AIR.defaultBlockState());
+            cache.invalidate(chunk);
+            helper.assertTrue(cache.isExposed(ground.above(3), policy) && cache.isExposed(ground.above(3).east(), policy)
+                            && !cache.isExposed(ground.above(3).east(2), policy),
+                    "An open shaft reveals its column and adjacent first faces, without flooding the covered room");
+        }
+        helper.succeed();
+    }
+
+    private static void exteriorYard(Terrain terrain, BlockPos ground) {
+        for (int z = -3; z <= 3; z++) for (int x = -3; x <= 3; x++) {
+            terrain.put(ground.offset(x, 0, z), Blocks.GRASS_BLOCK.defaultBlockState());
+            for (int y = 1; y <= 16; y++) terrain.put(ground.offset(x, y, z), Blocks.AIR.defaultBlockState());
+        }
+    }
+
+    private static long geometrySamples(BlindstoneRuntime runtime) {
+        return JsonParser.parseString(runtime.diagnostics().sanitizedReport(runtime.configuration().current(), runtime.configuration().generation()))
+                .getAsJsonObject().getAsJsonObject("timings").getAsJsonObject("GEOMETRY").get("samples").getAsLong();
+    }
+
+    @GameTest
     public void deferredBatchKeepsOrderCallbacksSkyAndAuthorizedTorch(GameTestHelper helper) throws Exception {
         try (var settings = new Settings(helper); var terrain = new Terrain(helper.getLevel());
                 var viewer = new Viewer(helper, surface(helper))) {

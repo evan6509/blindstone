@@ -1,5 +1,23 @@
 # Private alpha test report
 
+## Surface correction — October 17, 2026
+
+Current source is the surface correction in the working tree on `codex/development`, based on `95a99794cc6b90071130da2df09396858cb86bc0`. The installable JAR remains `build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar`.
+
+- `./gradlew --offline --no-daemon build runGametest prepareAdmission` passed; the final `build runGametest` rerun after adding the stale-surface regression also passed. XML reports **126 total tests, 125 Blindstone tests, zero failures/errors**.
+- `python3 scripts/verify_jar.py` passed, including the new surface classifier, exact pins, mandatory hooks and exclusion of test code.
+- `python3 scripts/test_admission.py` passed against the exact production JAR below. Two independent clients completed normal offline admission, hidden-room isolation and lifecycle/rejoin checks, then remained connected for **20 seconds / 393 observed server ticks** with normal keepalives. The separate development-denial control was not rerun for this correction.
+- New decoded-packet regressions preserve grass beneath plants/foliage, outdoor air below Y=64, a complete clear water column with skylight, and exposed cliff faces while retaining buried chest/torch/ore concealment. A flying viewer performs no underground sight captures or reveal resends over unchanged public terrain. Tests also cover roof changes before initial publication, a formerly public yard becoming covered, sky-open-shaft invalidation, cache reuse and non-recursive first-face exposure.
+- Exterior geometry is deliberately public regardless of viewer position. Sky-open shafts, foliage/glass sight columns and immediately adjacent first faces are disclosure exceptions; this does not flood through covered rooms or connected caves. Exterior masks do not accumulate as permanent private knowledge. Wide opaque overhangs can still require local sight.
+
+Artifact SHA-256: `a79d9a2885acecf85a35a16a06f2aea46c162eced56030d5ad011f96ad2b452e`.
+
+Tracked summary: [surface-correction-2026-10-17.json](evidence/surface-correction-2026-10-17.json). Local logs are `build/surface-validation.log`, `build/surface-admission.log` and the admission UUID directory referenced by the summary. These checks do not establish graphical correctness on the user's server, live tick-time improvement, or representative SMP capacity. No deployment was performed.
+
+## Earlier login remediation baseline
+
+The remaining commit, artifact hash, counts, timings and RED controls below describe the earlier login-remediation build, before the surface correction.
+
 **Date:** October 17, 2026. **Artifact:** `blindstone-0.1.0-alpha.1+mc26.3.jar`.
 Implementation source: `9de9b8d7be398f63b5847fe9d81905d88a26192a` on `codex/development`, compared with reviewed source `4ea6c45bda39b757a9243f1398f81719d6147215`.
 Normal startup enables filtering and player admission after mandatory hooks/configuration validate. The isolated development test mode still denies outside logins.

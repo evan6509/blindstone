@@ -4,7 +4,15 @@
 
 ## World views and visibility
 
+`SurfaceVisibility` preserves the exterior before initial chunk publication. It starts at each loaded column's world-surface height and scans down to the first sight blocker, including that block. Air, clear water, foliage and transparent glass transmit the exterior pass; lava, powder snow, moving pistons, storage and opaque/partial sight blockers stop it. An immediately adjacent sky-open column also exposes its first neighboring faces, without recursively traversing covered air. Missing chunks never authorize exterior cells or load on demand. This policy deliberately makes directly sky-open shafts and their first surfaces public, independently of viewer distance or position. It does not claim exact long-distance visibility beneath wide opaque overhangs.
+
+One server-wide LRU cache holds at most 1024 loaded-chunk entries. Each entry contains 256 integer column heights and immutable section masks (at most 64 sections under the configured vertical limit): at most about 33 MiB of array/mask payload at that maximum, plus object overhead and retained chunk references. Block edits at/above a column's first blocker invalidate its columns and neighboring derived masks; edits below an unchanged blocker reuse them. Chunk availability changes invalidate the same boundary. Surface changes also invalidate pending filtered light/chunk generations, including neighboring-face lighting halos at chunk borders.
+
+Exterior masks are frozen into both chunk and lighting views, separately from delivered private masks. Formerly public air therefore does not become permanent underground authorization if a roof is built later. Private sight/body results subtract current public surface cells before accumulating knowledge or queuing resends. A player whose full sight range is above the protected band skips sight capture entirely; other sight jobs omit already-public/delivered candidates.
+
 `ChunkFilter` creates detached per-viewer sections and rebuilds palettes, non-air/fluid counts, initial block-entity entries and client heightmaps. It never installs fake states in live chunks or changes saved terrain, inventories, collisions, generation or mob behavior.
+
+Fully concealed sections use a single replacement-state palette without a 4096-cell rebuild; fully authorized sections copy the source. Partial masks still rebuild palettes from filtered states so hidden palette entries cannot escape.
 
 `GeometrySnapshot` captures loaded cells and shapes on the owning server thread. Missing cells are opaque. Resumable visibility jobs test individual candidates in every direction using clear paths and first surfaces. Third-person camera offsets must themselves be reachable without crossing geometry. Fixed candidate samples and finite camera offsets are conservative coverage choices; smooth rendering through every tiny opening still needs client validation.
 
