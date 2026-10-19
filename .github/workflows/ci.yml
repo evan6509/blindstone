@@ -1,34 +1,96 @@
-name: Build and isolated integration tests
+name: Build and release
 
 on:
   push:
-    branches: [codex/development]
+    branches: [main, codex/development]
   pull_request:
     branches: [main, codex/development]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# Hold the lock from selection through publication; retain pending main pushes.
+# GitHub supports up to 100 queued runs with queue: max.
 concurrency:
-  group: build-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: blindstone-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'release' || github.run_id }}
+  queue: max
+  cancel-in-progress: false
 
 jobs:
-  build:
+  version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    # GitHub requires write access to list unfinished draft releases.
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      previous: ${{ steps.previous.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-java@v6
+      - name: Select release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_version.py
+      - name: Find previous applicable published release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BLINDSTONE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, 'scripts')
+          from release_version import history
+          from release_assets import previous_tag
+          releases, tags = history(os.environ['GITHUB_REPOSITORY'])
+          previous = previous_tag(releases, tags, os.environ['BLINDSTONE_VERSION'], os.environ['GITHUB_SHA'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'tag={previous or ""}\n')
+          PY
+
+  build:
+    needs: version
+    if: ${{ !cancelled() && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BLINDSTONE_VERSION: ${{ needs.version.outputs.version }}
+      PREVIOUS_TAG: ${{ needs.version.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-provider: basic
-      - name: Build prototype
+      - name: Use checked-in version for validation runs
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, 'scripts')
+          from release_version import properties
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'BLINDSTONE_VERSION={properties()["mod_version"]}\n')
+          PY
+      - name: Test release helpers
+        run: python3 -m unittest discover -s tests -v
+      - name: Build private alpha
         run: ./gradlew --no-daemon clean build
       - name: Run isolated 26.3 integration tests
         run: ./gradlew --no-daemon runGametest
@@ -40,3 +102,51 @@ jobs:
         run: python3 scripts/test_admission.py
       - name: Verify development admission remains closed
         run: python3 scripts/test_admission.py --development-denial
+      - name: Package and verify user downloads
+        run: python3 scripts/release_assets.py package
+      - name: Upload verified downloads
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: blindstone
+          path: build/release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports
+          path: |
+            build/gametest-results.xml
+            build/gametest/logs/latest.log
+            build/reports/
+            build/admission/*/result.json
+            build/admission/*/server.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    needs: [version, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BLINDSTONE_VERSION: ${{ needs.version.outputs.version }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: blindstone
+          path: release
+      - name: Verify downloaded build assets
+        run: python3 scripts/release_assets.py verify release
+      - name: Stage draft, upload, download, verify, then publish
+        run: python3 scripts/publish_release.py

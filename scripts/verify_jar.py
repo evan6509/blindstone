@@ -2,7 +2,9 @@
 """Check the built server artifact, version pins, entrypoints, and required admission hook."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
 from zipfile import ZipFile
 
 
@@ -11,16 +13,20 @@ def require(condition, message):
         raise SystemExit(message)
 
 
-def main():
+def verify(directory="build/libs", version=None, commit=None):
     properties = dict(line.split("=", 1) for line in Path("gradle.properties").read_text().splitlines() if "=" in line)
-    version = properties["mod_version"] + "+mc" + properties["minecraft_version"]
-    jars = [p for p in Path("build/libs").glob("*.jar") if not p.name.endswith("-sources.jar")]
+    version = (version or os.environ.get("BLINDSTONE_VERSION") or properties["mod_version"]) + "+mc" + properties["minecraft_version"]
+    jars = [p for p in Path(directory).glob("*.jar") if not p.name.endswith("-sources.jar")]
     require(len(jars) == 1, "Expected exactly one installable JAR; run clean build")
     jar = jars[0]
     require(jar.name == f"blindstone-{version}.jar", "Unexpected JAR name/version")
     with ZipFile(jar) as archive:
         require(archive.testzip() is None, "Invalid ZIP data")
         metadata = json.loads(archive.read("fabric.mod.json"))
+        manifest = archive.read("META-INF/MANIFEST.MF").decode().replace("\r\n ", "")
+        require(f"Implementation-Version: {version}\r\n" in manifest, "Manifest version differs")
+        if commit is not None:
+            require(f"Blindstone-Commit: {commit}\r\n" in manifest, "JAR source commit differs")
         require(metadata["id"] == "blindstone" and metadata["version"] == version, "Bad mod identity")
         require(metadata["environment"] == "server", "Must be a server-only mod")
         require(metadata["depends"]["minecraft"] == "=" + properties["minecraft_version"], "Minecraft must be exactly pinned")
@@ -46,6 +52,12 @@ def main():
             require(int.from_bytes(bytecode[6:8], "big") == 69, f"Expected Java 25 class: {name}")
         require(not any("GameTests" in n or "/admission/" in n or n == "fabric-gametest-api-v1" for n in archive.namelist()), "Test code bundled in mod")
         require(metadata["entrypoints"]["main"] == ["com.evanchubbuck.blindstone.BlindstoneMod"], "Missing server initializer")
+    return jar, metadata
+
+
+def main():
+    jar, _ = verify(sys.argv[1] if len(sys.argv) > 1 else "build/libs",
+                    commit=os.environ.get("GITHUB_SHA"))
     print(f"Verified {jar}\nSHA256 {hashlib.sha256(jar.read_bytes()).hexdigest()}")
 
 

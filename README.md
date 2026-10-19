@@ -7,7 +7,7 @@ Normal startup enables filtering after required hooks and configuration validate
 ## Install
 
 1. Use a dedicated **Minecraft 26.3** server with **Java 25**, **Fabric Loader 0.19.5**, and **Fabric API 0.163.0+26.3**.
-2. Put `blindstone-0.1.0-alpha.1+mc26.3.jar` and the pinned Fabric API JAR in the server's `mods` directory.
+2. Download the installable JAR from [GitHub Releases](https://github.com/evan6509/blindstone/releases) when available. Put `blindstone-<version>+mc26.3.jar` and the pinned Fabric API JAR in the server's `mods` directory.
 3. Start the server normally, without the development JVM flag. The first start creates `config/blindstone.json`.
 4. Check `/blindstone status` and `/blindstone verify`. Operators do not receive a viewing bypass.
 
@@ -42,6 +42,7 @@ With a Java 25 JDK on `JAVA_HOME`/`PATH`:
 
 ```sh
 ./gradlew --no-daemon clean build runGametest
+python3 -m unittest discover -s tests -v
 python3 scripts/verify_jar.py
 ./gradlew --no-daemon prepareAdmission
 python3 scripts/test_admission.py
@@ -73,4 +74,40 @@ Previously downloaded terrain cannot be erased from a modified client. Player ES
 
 The Overworld is the only protected dimension. Sampled sight can cause delayed reveals around small openings; supported movement remains bounded. Post-effect identifiers, resource-pack controls and audited server UI metadata have explicit policies. Protected-PLAY cookies, show-dialog schemas and arbitrary mod payloads remain unsupported. Non-transport PLAY packets sent off-thread disconnect even outside the Overworld. Direct Netty writes and replacement send paths need explicit compatibility work. See the [integration audit](docs/COMPATIBILITY.md). Automated admission does not prove graphical playability, profiler resistance, or SMP performance.
 
-Development commits belong on `codex/development`; `main` requires explicit integration approval. CI builds/tests only; no release or publishing workflow is configured. Redistribution rights remain reserved pending a license decision.
+## Build and release automation
+
+Development commits belong on `codex/development`; `main` requires explicit integration approval. One workflow validates development pushes, pull requests to `main` or `codex/development`, and manual runs. It builds the production JAR, runs release-helper tests and all GameTests, verifies packaging, and runs both installed-production admission checks. Verified downloads and test evidence are retained as Actions artifacts. These validation events never publish releases.
+
+Only a successful **push to `main`**, including a merged PR, automatically publishes a GitHub Release. The workflow checks out the exact triggering SHA and holds a single release queue lock through version selection, build, verification, and publication. Pending releases are retained using GitHub's `queue: max` (up to 100 waiting runs).
+
+The first release uses `mod_version` from `gradle.properties`, currently `0.1.0-alpha.1`. Subsequent releases advance the highest reserved version: `0.1.0-alpha.2`, `0.1.0-alpha.3`, and so on. Tags and all releases, including drafts and prereleases across every API page, reserve numbers. The supported scheme is `MAJOR.MINOR.PATCH`, optionally followed by `-alpha.N`, `-beta.N`, or `-rc.N`. Prerelease counters advance within their channel; stable releases advance the patch. Raising the checked-in baseline above all history starts that new version/channel. Old source versions never reset history.
+
+Each release includes exactly:
+
+- `blindstone-<version>+mc26.3.jar`: the platform-independent server mod for Java 25, with matching Fabric/manifest versions and the triggering commit in its manifest.
+- `CHANGELOG.md`: changes since the previous lower-version published ancestor (or full history for the first release), commit/comparison links, installation requirements, and exact source SHA.
+- `SHA256SUMS`: SHA-256 checksums for the JAR and changelog.
+
+Fabric Loader and Fabric API remain separate installation requirements. Source/intermediate JARs, test code, server worlds, and credentials are excluded. Alpha/beta/rc releases are marked **Prerelease** and never marked Latest. A stable release can become Latest only when its SHA is still the head of `main` and no higher version is already published. Use the releases listing to find alpha downloads; GitHub's Latest link excludes prereleases.
+
+Publication creates a tag once at the triggering SHA and stages a **draft** release. It uploads the verified assets, downloads them again, checks byte equality, checksums, JAR contents, embedded versions/SHA and notes, and only then publishes. A failed verification leaves the draft unpublished. Retry the failed Actions run to resume a draft or orphan tag for that exact commit. An already published release is downloaded and verified without replacing its assets; tags are never moved. API/authentication failures stop the run clearly.
+
+No custom signing keys or repository secrets are needed. Enable GitHub Actions and allow the workflow's `GITHUB_TOKEN` to receive `contents: write` for version selection (draft visibility) and publication. All other jobs default to `contents: read`; PR validation uses no release secrets. Repository rules must permit that token to create `v*` tags and GitHub Releases. Private-repository downloads require repository access. Redistribution rights remain reserved pending a license decision.
+
+To test a selected version locally without publishing, set `BLINDSTONE_VERSION` and `GITHUB_SHA` for **all** build/verification commands, for example:
+
+```sh
+export BLINDSTONE_VERSION=0.1.0-alpha.2
+export GITHUB_SHA="$(git rev-parse HEAD)"
+export GITHUB_REPOSITORY=evan6509/blindstone
+./gradlew --no-daemon clean build runGametest prepareAdmission
+python3 scripts/verify_jar.py
+python3 scripts/test_admission.py
+python3 scripts/test_admission.py --development-denial
+python3 scripts/release_assets.py package
+python3 scripts/release_assets.py verify build/release
+```
+
+`BLINDSTONE_VERSION` overrides only the build version; it does not edit source metadata. Packaging requires an empty output directory (`clean` removes it). Running validation locally does not create remote tags, drafts, or releases.
+
+See [release automation validation](docs/RELEASE_VALIDATION.md) for local evidence, event gates, and the distinction from an actual GitHub Actions release.

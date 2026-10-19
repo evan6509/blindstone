@@ -2,7 +2,8 @@ plugins {
     id 'net.fabricmc.fabric-loom' version '1.17.14'
 }
 
-version = "${project.mod_version}+mc${project.minecraft_version}"
+def selectedVersion = providers.environmentVariable('BLINDSTONE_VERSION').getOrElse(project.mod_version)
+version = "${selectedVersion}+mc${project.minecraft_version}"
 group = 'com.evanchubbuck.blindstone'
 base { archivesName = 'blindstone' }
 
@@ -20,6 +21,10 @@ processResources {
 java {
     withSourcesJar()
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+tasks.named('jar') {
+    manifest.attributes('Implementation-Version': project.version,
+        'Blindstone-Commit': providers.environmentVariable('GITHUB_SHA').getOrElse('local'))
 }
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
