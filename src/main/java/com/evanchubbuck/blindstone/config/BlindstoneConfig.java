@@ -31,7 +31,7 @@ public record BlindstoneConfig(int schemaVersion, List<String> dimensions, int p
     public static BlindstoneConfig defaults() {
         return new BlindstoneConfig(1, List.of(OVERWORLD), 64, true, true, "preserve_audible",
                 new Replacements("minecraft:stone", "minecraft:deepslate"), 16, 1, 0.0625,
-                new Budgets(128, 1024, 8192, 128, 8192, 262144, 65536, 262144, 15000000, 67108864, 20));
+                new Budgets(128, 1024, 8192, 128, 8192, 262144, 65536, 262144, 5000000, 67108864, 20));
     }
 
     /** The lower bound always follows the actual world's minimum; callers must capture it on its owning thread. */

@@ -102,6 +102,8 @@ public final class LightScheduler {
                 throw failure;
             }
         }
+        if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled)
+            com.evanchubbuck.blindstone.diagnostics.WorkMetrics.lightOperations += consumed;
         return consumed;
     }
 

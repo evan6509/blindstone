@@ -245,9 +245,11 @@ public final class VisibilityEvaluator {
             origins.add(view.eyes());
             cameraOffset = view.thirdPerson() ? 0 : CAMERA_OFFSETS.length;
             BlockPos center = BlockPos.containing(view.eyes());
+            BitSet reachable=geometry.reachableSightCells(view.eyes());
             for (int y = -range; y <= range; y++) for (int z = -range; z <= range; z++) for (int x = -range; x <= range; x++) {
                 BlockPos pos = center.offset(x, y, z);
-                if (policy.protects(pos.getY()) && Vec3.atCenterOf(pos).distanceToSqr(view.eyes()) <= range * range
+                if (policy.protects(pos.getY()) && geometry.reachableSightCell(reachable,pos)
+                        && Vec3.atCenterOf(pos).distanceToSqr(view.eyes()) <= range * range
                         && !known.getOrDefault(ChunkPos.pack(pos), Map.of()).getOrDefault(pos.getY() >> 4, SectionVisibility.none())
                             .isRevealed(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15))
                     candidates.add(pos);

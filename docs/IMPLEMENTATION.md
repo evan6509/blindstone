@@ -14,6 +14,8 @@ Fully concealed sections use a single replacement-state palette without a 4096-c
 
 `GeometrySnapshot` captures loaded cells and shapes on the owning server thread. Missing cells are opaque. Resumable visibility jobs test individual candidates in every direction using clear paths and first surfaces. Third-person camera offsets must themselves be reachable without crossing geometry. Fixed candidate samples and finite camera offsets are conservative coverage choices; smooth rendering through every tiny opening still needs client validation.
 
+Before sorting candidates, visibility jobs conservatively prune cells disconnected from the eye clearance region by full sight cubes. Solid boundary faces remain candidates; partial shapes remain traversable for this prefilter. Only the existing exact rays authorize a reveal. The flood is bounded by the immutable snapshot and never shares viewer knowledge.
+
 Viewer state separates pending authorization from delivered masks. Chunk/session revisions prevent replaced work, geometry changes, unloads, teleports, dimension changes and configuration changes from authorizing stale output. Knowledge accumulates within a tracking session and is recomputed after unload.
 
 The accepted body, supported root-vehicle body and swept path receive a fixed 1/16-block safety margin. The straight sweep between accepted endpoints uses the same margin at any supported speed; it does not reconstruct intermediate axis-resolved movement bends. Bounds on bodies, path distance and scanned cells fail closed when exceeded. A body cell may expose information just across a wall; this is the documented movement-safety exception.
@@ -43,7 +45,7 @@ Startup forces required target classes to transform and verifies their marker/ac
 - Exercise ordinary graphical clients, third-person cameras, tiny openings, mining, doors, fluids, pistons, building, combat, vehicles, fast travel and dimension/respawn/rejoin flows.
 - Capture decoded views for two independent clients and adversarial minimap/X-ray/freecam/ESP clients; compare controlled present/absent profiler fixtures.
 - Validate supported entity classes and compound visual payloads against actual client behavior, including uncommon adapters and relationship transitions.
-- Benchmark named player/chunk/entity loads and publish first-chunk delay, reveal latency, memory use and tick percentiles. The default 15 ms instrumented-work guard is not a hard whole-server tick deadline.
+- Benchmark named player/chunk/entity loads and publish first-chunk delay, reveal latency, memory use and tick percentiles. The default 5 ms instrumented-work guard is not a hard whole-server tick deadline.
 - Validate each optimization/alternate-send stack explicitly. Arbitrary payload schemas and direct channel writes are not covered by a vanilla class inventory.
 
 These are public-release acceptance gates. They do not require keeping the private alpha's ordinary startup disabled.

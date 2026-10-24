@@ -1,4 +1,100 @@
-# Measured anti-base redesign — October 24, 2026
+# Default-range follow-up — October 24, 2026
+
+The local eight-viewer range-16 movement/edit workload now meets the requested p95 ≤10 ms and max <50 ms targets. This is a bounded synthetic production-path measurement, not a real-player capacity claim. Lighting backlogs remain a material limitation: lower per-refresh cost also spreads work over more refreshes.
+
+## Matched method and test-first evidence
+
+Baseline is production behavior at `17c1b22316c365ac6efc3c9f14ad081f1c57f5de`, with only opt-in light-operation instrumentation and the new harness/regression added. It was measured before the production repair, and measured again with the final harness. Its XML contains 128 passing tests and exactly one expected failure: the new sealed-room regression sees **17,148 candidates**, exceeding its ≤200 bound. The final clean run passes all **129** tests, including the candidate bound, <20,000 ray-work bound, visible wall disclosure, concealed exterior, and existing privacy/lifecycle/packet regressions. No timing thresholds are CI assertions.
+
+`PlayableGameTests.defaultRangeProductionBenchmark` runs with the complete generated defaults, including range **16**, 65,536 ray-work units per viewer and 262,144 globally. The baseline default cooperative work allowance is **15 ms**; the final generated default is **5 ms**. All other defaults remain unchanged. Existing configuration files are preserved; installations retaining 15 ms do not automatically get the final 5 ms timing result. An intermediate pruning-only run at 15 ms still has eight-viewer movement/edit/burst event p95 of 16.039 / 15.255 / 15.444 ms; the final result combines less ray work with more conservative scheduling. [Intermediate raw measurements](evidence/followup-pruned-2026-10-24.json) precede the final light-operation/drain instrumentation and edge-streaming case and are diagnostic, not a fully matched third run.
+
+Same host/JDK/pins as the historical method below; [fresh host metadata](evidence/followup-host-2026-10-24.json). No CPU pinning, GC isolation, extra optimization mods, or timing portability is claimed. Gradle heap is 2 GiB with two workers; the GameTest JVM uses its existing ergonomic heap.
+
+Each surface (feet Y=65) and underground (Y=30) case uses **1/2/4/8 independent sessions**, with colocated accepted bodies and separate reveal/delivery state, sharing actual loaded scene geometry. Each tracks a **3×3, nine-chunk area** through the real transformed Connection → deferred filtering → lighting → publication path. A sealed gallery permits two accepted positions three blocks apart. These are simulated viewers using EmbeddedChannels, not player or transport throughput.
+
+Before measurement and between workloads, step until **16 consecutive refreshes have no captures, rays, light operations, filtering, new queues or output**, bounded at 20,000 refreshes. All viewers must stay connected. Initial nine-chunk delivery and chunk loading are outside measurement. The old fixed 512 warm-up was insufficient at range 16; counting only newly created light jobs also falsely suggested quiescence while existing jobs ran. The final harness explicitly counts consumed light operations.
+
+For each workload, run 32 cycles of one event frame plus four follow-up refreshes (160 total). Movement alternates accepted positions by **3 blocks** every cycle, exceeding the two-block rebase threshold. Assertions require exactly **32 sight captures per underground viewer** across event/follow-up frames. Edit alternates stone/air at one nearby cell; burst changes four cells. Streaming forgets an edge chunk and delivers a different already loaded edge chunk, alternating two edges while keeping nine tracked chunks. Static controls perform no event. After each workload, separately measure the entire drain through the final 16 idle refreshes (`*-tail` rows).
+
+Timing includes beginTick, refresh, EmbeddedChannel draining, and event-frame fixture changes or stream source packet construction. It excludes setup, loading, initial delivery, reporting/counter aggregation, normal server simulation, real transport and rendering. Event timing is therefore an inclusive local path cost, not an isolated CPU profiler attribution to mod code alone. Follow-up frames can still contain deferred active work; they are not called idle. Percentiles use nearest rank; raw JSON retains nanoseconds and every counter. With 32 event samples, p99 equals max.
+
+## Range-16 results
+
+Underground times in **ms**, p50 / p95 / p99 / max. Each event row has 32 samples. Static controls are separate from these percentiles.
+
+| Viewers | Event | Baseline, 15 ms allowance | Final, 5 ms allowance |
+| ---: | --- | --- | --- |
+| 1 | movement | 7.342 / 12.767 / 14.273 / 14.273 | 2.322 / 2.500 / 8.970 / 8.970 |
+| 1 | edit | 12.666 / 15.084 / 15.086 / 15.086 | 5.083 / 5.204 / 5.216 / 5.216 |
+| 1 | burst | 12.730 / 15.182 / 15.203 / 15.203 | 5.150 / 5.587 / 7.264 / 7.264 |
+| 1 | stream | 12.081 / 14.263 / 15.143 / 15.143 | 5.072 / 5.203 / 5.306 / 5.306 |
+| 2 | movement | 13.880 / 18.258 / 19.739 / 19.739 | 4.518 / 4.812 / 5.629 / 5.629 |
+| 2 | edit | 19.583 / 23.739 / 24.018 / 24.018 | 5.100 / 5.643 / 6.935 / 6.935 |
+| 2 | burst | 19.643 / 24.137 / 24.301 / 24.301 | 5.205 / 5.908 / 5.998 / 5.998 |
+| 2 | stream | 18.953 / 22.848 / 23.220 / 23.220 | 5.125 / 5.209 / 5.323 / 5.323 |
+| 4 | movement | 20.664 / 21.454 / 25.231 / 25.231 | 6.800 / 7.016 / 7.119 / 7.119 |
+| 4 | edit | 19.511 / 23.894 / 24.111 / 24.111 | 5.090 / 5.193 / 6.103 / 6.103 |
+| 4 | burst | 19.655 / 23.499 / 24.877 / 24.877 | 5.178 / 5.301 / 6.920 / 6.920 |
+| 4 | stream | 18.868 / 23.238 / 23.815 / 23.815 | 5.210 / 5.265 / 5.374 / 5.374 |
+| 8 | movement | 20.606 / 21.379 / 23.258 / 23.258 | 6.985 / 7.146 / 8.746 / 8.746 |
+| 8 | edit | 19.593 / 23.384 / 23.576 / 23.576 | 5.145 / 5.215 / 5.230 / 5.230 |
+| 8 | burst | 19.759 / 23.590 / 23.690 / 23.690 | 5.312 / 5.402 / 5.465 / 5.465 |
+| 8 | stream | 19.222 / 24.524 / 24.769 / 24.769 | 5.380 / 5.432 / 5.500 / 5.500 |
+
+Eight-viewer follow-up and drain costs are kept separate from event frames. Follow-up rows each have 128 samples; drain sample counts include the final 16 idle refreshes, and timing percentiles alone must not obscure their duration.
+
+| Workload/phase | Baseline ms | Final ms | Drain refreshes before → after |
+| --- | --- | --- | ---: |
+| movement, four follow-ups/cycle | 16.558 / 21.087 / 21.584 / 22.083 | 0.032 / 7.009 / 7.267 / 9.678 | — |
+| movement, final drain | 5.139 / 6.634 / 8.495 / 10.402 | 0.007 / 0.011 / 0.011 / 0.011 | 555 → 16 |
+| edit, four follow-ups/cycle | 16.783 / 20.610 / 20.806 / 21.975 | 5.033 / 7.140 / 8.556 / 10.054 | — |
+| edit, final drain | 5.331 / 15.078 / 15.806 / 20.807 | 5.014 / 5.047 / 5.076 / 5.128 | 565 → 163 |
+| burst, four follow-ups/cycle | 16.897 / 20.529 / 20.924 / 20.997 | 5.034 / 7.063 / 8.197 / 8.315 | — |
+| burst, final drain | 5.317 / 15.069 / 15.856 / 16.598 | 5.014 / 5.048 / 5.117 / 5.134 | 563 → 168 |
+| stream, four follow-ups/cycle | 15.036 / 21.401 / 21.504 / 23.878 | 5.019 / 5.027 / 5.049 / 6.604 | — |
+| stream, final drain | 5.107 / 6.667 / 15.026 / 15.179 | 0.012 / 5.028 / 5.057 / 5.057 | 559 → 31 |
+
+Static controls: all surface and underground 1/2/4/8-viewer cases have zero shape/safety captures, rays, section writes, chunk filters, light jobs/operations, queued generations and packets in their 160 measured static frames, before and after. Eight-viewer static timings are:
+
+| Scene/phase | Baseline ms | Final ms |
+| --- | --- | --- |
+| Surface, event slot | 0.009 / 0.012 / 0.016 / 0.016 | 0.009 / 0.013 / 0.014 / 0.014 |
+| Surface, follow-up slots | 0.009 / 0.011 / 0.017 / 0.020 | 0.009 / 0.012 / 0.017 / 0.022 |
+| Underground, event slot | 0.008 / 0.020 / 0.025 / 0.025 | 0.008 / 0.012 / 0.017 / 0.017 |
+| Underground, follow-up slots | 0.008 / 0.009 / 0.016 / 0.020 | 0.007 / 0.008 / 0.010 / 0.011 |
+
+All surface event/follow-up/drain metrics, and every smaller-viewer control/phase, are included in the raw files rather than mixed into underground event percentiles.
+
+## Work reduction and remaining queues
+
+Eight-viewer totals below include **event + follow-up + full drain**, with the final idle confirmations. Each entry is baseline → final. `queued` counts newly queued generations, not peak queue depth; coalescing/cancellation means these totals are not distinct delivered chunks. Existing configured queue/memory caps remain enforced. `lightOperations` counts work consumed by existing jobs as well as new jobs, preventing unobserved light processing during drain.
+
+| Workload | Captures / copied cells | Ray-work units | Section writes | Chunk filters | Light jobs / operations | Queued / packets |
+| --- | --- | --- | --- | --- | --- | --- |
+| movement | 256 → 256 / 10,976,000 → 10,976,000 | 180,050,584 → 319,488 | 0 → 0 | 0 → 0 | 0 → 0 / 0 → 0 | 0 → 0 / 0 → 0 |
+| edit | 253 → 223 / 10,847,375 → 9,561,125 | 168,319,640 → 256,937 | 2,472 → 2,472 | 72 → 72 | 940 → 941 / 104,075,951 → 76,725,697 | 2,304 → 2,304 / 72 → 72 |
+| burst | 253 → 225 / 10,847,375 → 9,646,875 | 168,319,640 → 259,383 | 2,472 → 2,472 | 72 → 72 | 940 → 944 / 103,545,395 → 79,218,626 | 9,216 → 9,216 / 72 → 72 |
+| stream | 206 → 163 / 8,832,250 → 6,988,625 | 164,190,872 → 199,349 | 0 → 0 | 99 → 8 | 200 → 162 / 78,425,139 → 45,919,155 | 256 → 256 / 355 → 264 |
+
+The largest final eight-viewer movement/edit/burst sample across events, follow-ups and complete drains is **10.054 ms**. All viewers stay connected and settle. The 5 ms allowance remains cooperative: one capture/evaluator slice, safety and serialization can overshoot it. The local targets are met for this fixture, not guaranteed by the constant.
+
+The main work repair rejects candidates disconnected from the accepted eye clearance region by complete opaque cubes before candidate sorting and ray creation. A bounded six-neighbor flood includes the cells visited by axis-ordered DDA, stops at solid cubes while retaining their wall faces, and traverses partial/transparent shapes conservatively. Exact shape-aware rays still authorize every reveal. Missing candidates remain explicitly incomplete. No flood result authorizes disclosure. Snapshot bounds, per-viewer knowledge, Y<64 surface concealment, body margin, accepted movement bounds, update/entity/block-entity/light filtering and fail-closed paths remain intact.
+
+Full 42,875-cell captures remain per viewer/rebase; this is **not** a sliding snapshot or shared geometry cache. The added flood uses a bounded int queue and bitset per job (at most 42,875 queue entries). Ray/candidate work falls substantially, but no measured allocation-byte or retained-heap claim is made. Shared chunk-revision caches and sliding snapshots were considered: frozen neighbor-dependent shapes, moving halos, availability and lifecycle invalidation add correctness complexity. The measured first repair is candidate pruning. Existing local edit invalidation still rebuilds neighboring light halos; completed decisions already persist. Range 8 would have a 6,859-cell bound instead of 42,875, but was not benchmarked here or selected as a new default.
+
+Lower work per refresh does not mean immediate editing/streaming delivery. The final eight-viewer edit and burst drains still require **163 and 168 refreshes**, including 16 idle confirmations, after 32 repeatedly invalidating events. At nominal 20 Hz those refresh counts would span seconds; manually stepped timings are not real-server delivery latency. Coalesced light work is cancelled/restarted during repeated edits. This remains a substantial backlog limitation; the benchmark does not establish responsiveness for simultaneous exploration into unknown cells during edits. Broad open/connected cave systems may defeat the connectivity pruning and remain expensive. Different viewer locations, one-way travel into fresh terrain, generation/loading, entity-dense scenes, retained memory, packet bytes, real SMP ticks and graphical playability remain unmeasured. The historical performance complaint is not proven solved.
+
+## Reproduction and evidence
+
+- [Final matched baseline, all phases/counters](evidence/followup-baseline-2026-10-24.json)
+- [Final clean-build result, all phases/counters](evidence/followup-after-2026-10-24.json)
+- [Host and configuration metadata](evidence/followup-host-2026-10-24.json)
+
+With the pinned Java 25 JDK on PATH, run the clean build/GameTests, Python tests, verifier and diff check shown in the historical reproduction section below. The new test writes `build/gametest/default-range-benchmark.json`; CI uploads it along with the historical benchmark and actual XML. To reproduce the baseline, apply the final harness plus opt-in `WorkMetrics`/`LightScheduler` instrumentation to `17c1b22`, keeping its production evaluator/snapshot/defaults; the new sealed-room regression is expected to fail. The default-range benchmark itself must pass. Final behavior passes all tests. No EULA-accepting admission, ordinary dedicated server/client, deployment or release is part of reproduction.
+
+---
+
+# Historical range-4 anti-base redesign — October 24, 2026
 
 The historical complaint has no captured server profile/log and has **not** been reproduced as a deterministic real-server slowdown. These measurements establish specific repeat-work defects and their removal. They do not establish SMP capacity or explain the user's old experience.
 

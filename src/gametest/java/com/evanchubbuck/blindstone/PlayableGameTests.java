@@ -98,6 +98,118 @@ public final class PlayableGameTests {
         helper.succeed();
     }
 
+    /** Default configuration, repeated accepted rebases and nine real tracked chunks per viewer. */
+    @GameTest
+    public void defaultRangeProductionBenchmark(GameTestHelper helper) throws Exception {
+        var results = new ArrayList<Map<String,Object>>();
+        try (var settings = new Settings(helper, true); var terrain = new Terrain(helper.getLevel())) {
+            var origin = center(helper, 30);
+            // Two positions three blocks apart in a sealed gallery; all geometry is real loaded state.
+            for (int y=-2;y<=4;y++) for(int z=-5;z<=5;z++) for(int x=-5;x<=9;x++)
+                terrain.put(origin.offset(x,y,z), (y>=0 && y<=2 && Math.abs(z)<=2 && x>=-2 && x<=6
+                        ? Blocks.AIR : Blocks.STONE).defaultBlockState());
+            for(boolean underground:List.of(false,true)) for(int count:List.of(1,2,4,8)) {
+                var viewers=new ArrayList<Viewer>();
+                try {
+                    for(int n=0;n<count;n++) {
+                        var v=new Viewer(helper,origin.atY(underground?30:65));viewers.add(v);
+                        var cp=v.player.chunkPosition();
+                        helper.getLevel().getChunk(cp.x()+2,cp.z()); // Load the entering edge outside measurement.
+                        for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++) {
+                            var chunk=helper.getLevel().getChunk(cp.x()+x,cp.z()+z);
+                            v.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
+                        }
+                    }
+                    settleBenchmark(helper,settings.runtime,viewers);
+                    for(var v:viewers)helper.assertTrue(v.chunks().size()>=9 && v.connection.isConnected(),"Nine tracked chunks must settle");
+                    for(String event:List.of("static","movement","edit","burst","stream")) {
+                        var active=new ArrayList<Long>();var settling=new ArrayList<Long>();
+                        var activeCounts=new LinkedHashMap<String,Long>();var settlingCounts=new LinkedHashMap<String,Long>();
+                        for(int cycle=0;cycle<32;cycle++) {
+                            for(int phase=0;phase<5;phase++) {
+                                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=true;
+                                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.reset();
+                                int before=viewers.stream().mapToInt(v->v.history.size()).sum();
+                                long start=System.nanoTime();
+                                if(phase==0) {
+                                    if(event.equals("movement"))for(var v:viewers)v.player.setPos(origin.getX()+0.5+(cycle%2==0?3:0),v.player.getY(),origin.getZ()+0.5);
+                                    if(event.equals("edit")||event.equals("burst"))for(int b=0;b<(event.equals("burst")?4:1);b++)
+                                        terrain.put(origin.offset(b,1,1),(cycle%2==0?Blocks.STONE:Blocks.AIR).defaultBlockState());
+                                    if(event.equals("stream"))for(var v:viewers) {
+                                        var cp=v.player.chunkPosition();
+                                        var leaving=new ChunkPos(cp.x()+(cycle%2==0?-1:2),cp.z());
+                                        var entering=new ChunkPos(cp.x()+(cycle%2==0?2:-1),cp.z());
+                                        v.connection.send(new net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket(leaving));
+                                        var chunk=helper.getLevel().getChunk(entering.x(),entering.z());
+                                        v.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
+                                    }
+                                }
+                                benchmarkTick(helper,settings.runtime,viewers);
+                                long elapsed=System.nanoTime()-start;
+                                var counts=phase==0?activeCounts:settlingCounts;
+                                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot().forEach((key,value)->counts.merge(key,((Number)value).longValue(),Long::sum));
+                                counts.merge("packets",(long)viewers.stream().mapToInt(v->v.history.size()).sum()-before,Long::sum);
+                                (phase==0?active:settling).add(elapsed);
+                                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=false;
+                                for(var v:viewers)helper.assertTrue(v.connection.isConnected(),"Benchmark viewers must remain connected");
+                            }
+                        }
+                        for(boolean eventFrame:List.of(true,false)) {
+                            var times=(eventFrame?active:settling).stream().mapToLong(Long::longValue).sorted().toArray();
+                            var row=new LinkedHashMap<String,Object>();row.put("range",16);row.put("workGuardNanos",settings.runtime.configuration().current().settings().budgets().maxWorkNanosPerTick());row.put("trackedChunksPerViewer",9);
+                            row.put("underground",underground);row.put("viewers",count);row.put("event",event);row.put("eventFrame",eventFrame);row.put("samples",times.length);
+                            row.putAll(eventFrame?activeCounts:settlingCounts);
+                            for(int percentile:List.of(50,95,99))row.put("p"+percentile+"_ns",times[(int)Math.ceil(times.length*percentile/100.0)-1]);
+                            row.put("max_ns",times[times.length-1]);results.add(row);
+                        }
+                        var tail=new LinkedHashMap<String,Object>(settleBenchmark(helper,settings.runtime,viewers));
+                        tail.put("range",16);tail.put("workGuardNanos",settings.runtime.configuration().current().settings().budgets().maxWorkNanosPerTick());
+                        tail.put("trackedChunksPerViewer",9);tail.put("underground",underground);tail.put("viewers",count);
+                        tail.put("event",event+"-tail");tail.put("eventFrame",false);results.add(tail);
+                    }
+                } finally {com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=false;for(var v:viewers)v.close();}
+            }
+        }
+        Files.writeString(Path.of("default-range-benchmark.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(results));
+        for(var row:results)if(row.get("event").equals("static")) {
+            for(String counter:List.of("captures","safetyCaptures","rayChecks","chunkFilters","lightJobs","lightOperations","queued","packets"))
+                helper.assertTrue(((Number)row.get(counter)).longValue()==0,"Settled default-range controls must remain idle: "+counter);
+        }
+        for(int count:List.of(1,2,4,8)) {
+            long captures=results.stream().filter(row->row.get("viewers").equals(count)&&row.get("underground").equals(true)
+                    &&row.get("event").equals("movement")).mapToLong(row->((Number)row.get("captures")).longValue()).sum();
+            helper.assertTrue(captures==32L*count,"Every three-block movement must actually trigger a sight rebase for every viewer");
+        }
+
+        helper.succeed();
+    }
+
+    private static Map<String,Object> settleBenchmark(GameTestHelper helper, BlindstoneRuntime runtime,List<Viewer> viewers) {
+        var times=new ArrayList<Long>();var counts=new LinkedHashMap<String,Long>();
+        try {
+            com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=true;
+            int idle=0;
+            for(int i=0;i<20000;i++) {
+                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.reset();
+                int before=viewers.stream().mapToInt(v->v.history.size()).sum();
+                long start=System.nanoTime();benchmarkTick(helper,runtime,viewers);times.add(System.nanoTime()-start);
+                var snapshot=com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot();
+                snapshot.forEach((key,value)->counts.merge(key,value,Long::sum));
+                long packets=viewers.stream().mapToInt(v->v.history.size()).sum()-before;counts.merge("packets",packets,Long::sum);
+                boolean quiet=packets==0&&snapshot.values().stream().allMatch(n->n==0);
+                idle=quiet?idle+1:0;
+                for(var v:viewers)helper.assertTrue(v.connection.isConnected(),"Settling viewers must remain connected");
+                if(idle==16) {
+                    var sorted=times.stream().mapToLong(Long::longValue).sorted().toArray();
+                    var result=new LinkedHashMap<String,Object>();result.putAll(counts);result.put("samples",sorted.length);
+                    for(int percentile:List.of(50,95,99))result.put("p"+percentile+"_ns",sorted[(int)Math.ceil(sorted.length*percentile/100.0)-1]);
+                    result.put("max_ns",sorted[sorted.length-1]);return result;
+                }
+            }
+            throw new IllegalStateException("Benchmark failed to settle within 20000 refreshes");
+        } finally {com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=false;}
+    }
+
     private static void benchmarkTick(GameTestHelper helper, BlindstoneRuntime runtime,List<Viewer> viewers) {
         runtime.beginTick();runtime.refresh(helper.getLevel());for(var v:viewers)v.pump();
     }
@@ -502,13 +614,16 @@ public final class PlayableGameTests {
         final BlindstoneRuntime runtime;
         final Path file;
         final String original;
-        Settings(GameTestHelper helper) throws Exception {
+        Settings(GameTestHelper helper) throws Exception { this(helper, false); }
+        Settings(GameTestHelper helper, boolean defaults) throws Exception {
             runtime = BlindstoneRuntime.get(helper.getLevel().getServer());
             if (runtime == null) throw new IllegalStateException("Runtime lifecycle was not initialized");
             file = FabricLoader.getInstance().getConfigDir().resolve("blindstone.json"); original = Files.readString(file);
-            var json = JsonParser.parseString(original).getAsJsonObject();
-            json.addProperty("revealRangeBlocks", 4);
-            json.getAsJsonObject("budgets").addProperty("maxWorkNanosPerTick", 50000000);
+            var json = JsonParser.parseString(defaults
+                    ? com.evanchubbuck.blindstone.config.ConfigCodec.encode(com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults())
+                    : original).getAsJsonObject();
+            json.addProperty("revealRangeBlocks", defaults ? 16 : 4);
+            if(!defaults)json.getAsJsonObject("budgets").addProperty("maxWorkNanosPerTick", 50000000);
             Files.writeString(file, json.toString());
             try { runtime.reload(); }
             catch (Exception failure) { Files.writeString(file, original); throw failure; }

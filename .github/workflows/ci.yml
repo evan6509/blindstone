@@ -126,6 +126,7 @@ jobs:
           name: test-reports
           path: |
             build/gametest/benchmark.json
+            build/gametest/default-range-benchmark.json
             build/gametest-results.xml
             build/gametest/logs/latest.log
             build/reports/

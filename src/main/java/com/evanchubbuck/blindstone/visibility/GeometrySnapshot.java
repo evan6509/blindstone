@@ -1,6 +1,7 @@
 package com.evanchubbuck.blindstone.visibility;
 
 import java.util.List;
+import java.util.BitSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -17,6 +18,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -159,6 +161,57 @@ public final class GeometrySnapshot {
     public int unavailableBlocks() { return unavailable; }
     public boolean hasSightGeometry() { return sightGeometry; }
 
+    /**
+     * Conservative connected component used only to reject impossible ray targets. Full sight
+     * cubes terminate traversal but remain candidate wall faces. Partial shapes, glass and fluids
+     * remain traversable here; the exact rays still decide disclosure. Six-neighbor traversal
+     * includes every cell visited by our axis-ordered DDA, including its edge/corner tie steps.
+     * Seed the eye clearance cube as well as the eye so camera-corner starts and DDA epsilon
+     * cannot make this prefilter narrower than a valid ray path.
+     */
+    BitSet reachableSightCells(Vec3 eyes) {
+        BitSet reached=new BitSet(cells.length);
+        int[] queue=new int[cells.length];
+        int tail=0;
+        double margin=VisibilityEvaluator.CAMERA_HALF_WIDTH+0.00001;
+        for(int y=(int)Math.floor(eyes.y-margin);y<=Math.floor(eyes.y+margin);y++)
+            for(int z=(int)Math.floor(eyes.z-margin);z<=Math.floor(eyes.z+margin);z++)
+                for(int x=(int)Math.floor(eyes.x-margin);x<=Math.floor(eyes.x+margin);x++) {
+                    int lx=x-min.getX(),ly=y-min.getY(),lz=z-min.getZ();
+                    if(lx<0||ly<0||lz<0||lx>=sizeX||ly>=sizeY||lz>=sizeZ)continue;
+                    int i=(ly*sizeZ+lz)*sizeX+lx;
+                    if(cells[i]!=null&&!reached.get(i)) {
+                        reached.set(i);
+                        if(!fullSight(cells[i]))queue[tail++]=i;
+                    }
+                }
+        for(int head=0;head<tail;head++) {
+            int i=queue[head],x=i%sizeX,z=(i/sizeX)%sizeZ,y=i/(sizeX*sizeZ);
+            for(int direction=0;direction<6;direction++) {
+                int next=switch(direction) {
+                    case 0 -> x>0?i-1:-1;
+                    case 1 -> x+1<sizeX?i+1:-1;
+                    case 2 -> z>0?i-sizeX:-1;
+                    case 3 -> z+1<sizeZ?i+sizeX:-1;
+                    case 4 -> y>0?i-sizeX*sizeZ:-1;
+                    default -> y+1<sizeY?i+sizeX*sizeZ:-1;
+                };
+                if(next<0||cells[next]==null||reached.get(next))continue;
+                reached.set(next);
+                if(!fullSight(cells[next]))queue[tail++]=next;
+            }
+        }
+        return reached;
+    }
+
+    boolean reachableSightCell(BitSet reached,BlockPos pos) {
+        int x=pos.getX()-min.getX(),y=pos.getY()-min.getY(),z=pos.getZ()-min.getZ();
+        if(x<0||y<0||z<0||x>=sizeX||y>=sizeY||z>=sizeZ)return false;
+        int index=(y*sizeZ+z)*sizeX+x;
+        // Keep missing candidates so the evaluator still reports incomplete geometry explicitly.
+        return cells[index]==null||reached.get(index);
+    }
+
     /** Fully buried solids have no visible face; avoid sending seven rays into each terrain cell. */
     boolean enclosedSolid(BlockPos pos) {
         return fullSight(pos) && fullSight(pos.above()) && fullSight(pos.below())
@@ -167,6 +220,10 @@ public final class GeometrySnapshot {
 
     private boolean fullSight(BlockPos pos) {
         Cell cell = cell(pos);
+        return fullSight(cell);
+    }
+
+    private static boolean fullSight(Cell cell) {
         return cell != null && cell.sight().size() == 1 && cell.sight().getFirst().equals(UNIT_BOX);
     }
 

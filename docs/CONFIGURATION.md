@@ -30,7 +30,7 @@ When the runtime initializes, it creates `config/blindstone.json` if absent. Def
     "maxSnapshotBlocksPerJob": 262144,
     "maxGeometryChecksPerTickPerViewer": 65536,
     "maxGeometryChecksPerTickGlobal": 262144,
-    "maxWorkNanosPerTick": 15000000,
+    "maxWorkNanosPerTick": 5000000,
     "maxMaskBytes": 67108864,
     "movementDeliveryDeadlineTicks": 20
   }
@@ -76,7 +76,7 @@ These are private-alpha limits, not measured SMP capacity. Lowering a limit can 
 | `maxSnapshotBlocksPerJob` | 262144 | 4096–2097152 cells; required snapshot size is checked before capture. Geometry has a tighter fixed maximum of 42875 cells. |
 | `maxGeometryChecksPerTickPerViewer` | 65536 | 1–1048576 voxel/shape checks per viewer per tick, shared with bounded entity sight checks. |
 | `maxGeometryChecksPerTickGlobal` | 262144 | At least the per-viewer limit and at most 16777216; shared globally, including tracker scheduling slots. |
-| `maxWorkNanosPerTick` | 15000000 | 100000–50000000 ns; the default is a 15 ms measured-work guard. |
+| `maxWorkNanosPerTick` | 5000000 | 100000–50000000 ns; the default is a 5 ms measured-work guard. |
 | `maxMaskBytes` | 67108864 | 1024–1073741824 bytes; bounds charged visibility-mask payload, not total JVM heap. |
 | `movementDeliveryDeadlineTicks` | 20 | 1–100, at least the refresh interval; missed movement-safe delivery deadlines disconnect the affected viewer. |
 
@@ -88,7 +88,7 @@ Light reconstruction has a fixed shared **128 MiB** job/cache cap, with at most 
 
 The runtime also caps announced entity IDs at **16384 per viewer**. This fixed limit is not a configuration field. Saturation fails closed.
 
-The **15 ms guard is not a hard deadline inside capture or one evaluator step**. Work checks between stages and before reveal packets stop subsequent work, but an individual bounded operation can overshoot before returning. Aggregate timings and counters describe instrumented work; they do not prove whole-server tick cost, reveal latency, total memory, or throughput. Client gameplay and representative SMP benchmarks remain required.
+The **5 ms guard is not a hard deadline inside capture or one evaluator step**. Work checks between stages and before reveal packets stop subsequent work, but an individual bounded operation can overshoot before returning. Aggregate timings and counters describe instrumented work; they do not prove whole-server tick cost, reveal latency, total memory, or throughput. Client gameplay and representative SMP benchmarks remain required.
 
 ## Administration and reload
 
@@ -109,3 +109,5 @@ For reload, edit the complete file and run `/blindstone reload`. A rejected cand
 Reports contain configuration/bounds, versions, aggregate timings/counters, typed failure counts, and coverage evidence. They omit player identities, world coordinates other than configured vertical bounds, seeds, raw world data, file paths, and arbitrary exception messages. They stay local; there is no telemetry or automatic updater.
 
 Invalid configuration, overload, missing hooks or filtering failures never automatically switch protected-world delivery to unfiltered data. The explicit console command is the only runtime disable path. There is no telemetry or automatic updater.
+
+The October 24 follow-up lowers the generated default work allowance from 15 ms to 5 ms while retaining range 16. Existing configuration files are preserved: an existing `maxWorkNanosPerTick: 15000000` remains a 15 ms allowance until explicitly changed. The smaller allowance spreads geometry and lighting work over more refreshes; it does not reduce total lighting work or promise a delivery deadline for arbitrary edits. See [default-range evidence](PERFORMANCE.md).

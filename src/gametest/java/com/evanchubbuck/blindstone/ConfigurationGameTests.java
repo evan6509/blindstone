@@ -69,7 +69,7 @@ public final class ConfigurationGameTests {
                 json.replace("\"maxGeometryChecksPerTickGlobal\": 262144", "\"maxGeometryChecksPerTickGlobal\": 8191"),
                 json.replace("\"movementDeliveryDeadlineTicks\": 20", "\"movementDeliveryDeadlineTicks\": 0"),
                 json.replace("\"movementSafetyRadiusBlocks\": 0.0625", "\"movementSafetyRadiusBlocks\": 3.0"),
-                json.replace("\"maxWorkNanosPerTick\": 15000000", "\"maxWorkNanosPerTick\": 999999999999999999999999"))) {
+                json.replace("\"maxWorkNanosPerTick\": " + BlindstoneConfig.defaults().budgets().maxWorkNanosPerTick(), "\"maxWorkNanosPerTick\": 999999999999999999999999"))) {
             fails(helper, () -> ConfigCodec.decode(invalid), IllegalArgumentException.class);
         }
         helper.succeed();

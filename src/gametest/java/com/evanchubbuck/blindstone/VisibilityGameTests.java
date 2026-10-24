@@ -30,6 +30,22 @@ public final class VisibilityGameTests {
     private static final ConcealmentPolicy POLICY = new ConcealmentPolicy(-16, 16);
 
     @GameTest
+    public void sealedRoomPrunesDisconnectedDefaultRangeCandidates(GameTestHelper helper) {
+        var world=new HashMap<BlockPos,BlockState>();
+        for(int y=-2;y<=4;y++)for(int z=-4;z<=4;z++)for(int x=-4;x<=4;x++)
+            if(y<0 || y>2 || Math.abs(x)>2 || Math.abs(z)>2)world.put(new BlockPos(x,y,z),Blocks.STONE.defaultBlockState());
+        var geometry=GeometrySnapshot.capture(source(world),new BlockPos(-17,-16,-17),new BlockPos(17,18,17),pos->true);
+        var policy=new ConcealmentPolicy(-32,64);
+        var job=VisibilityEvaluator.createJob(geometry,viewpoint(true),policy,16,Map.of());
+        check(helper,job.totalCandidates()<=200,"Sealed room must omit disconnected air and buried terrain before sorting/ray work: "+job.totalCandidates());
+        var result=job.step(32768,1_000_000);
+        check(helper,job.done() && result.rayWork()<20000,"Sealed room must finish within a small deterministic ray bound");
+        check(helper,revealed(result,new BlockPos(3,1,0)),"Visible wall remains revealed");
+        check(helper,!revealed(result,new BlockPos(6,1,0)),"Disconnected exterior stays hidden");
+        helper.succeed();
+    }
+
+    @GameTest
     public void sealedAdjacentRoomStaysHiddenEvenWithThirdPersonOffsets(GameTestHelper helper) {
         var world = wall(Blocks.STONE.defaultBlockState());
         var result = evaluate(snapshot(world), viewpoint(true), 6);
