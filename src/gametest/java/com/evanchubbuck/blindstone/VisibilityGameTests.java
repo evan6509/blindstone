@@ -34,11 +34,52 @@ public final class VisibilityGameTests {
         var world=new HashMap<BlockPos,BlockState>();
         for(int y=-2;y<=4;y++)for(int z=-4;z<=4;z++)for(int x=-4;x<=4;x++)
             if(y<0 || y>2 || Math.abs(x)>2 || Math.abs(z)>2)world.put(new BlockPos(x,y,z),Blocks.STONE.defaultBlockState());
-        var geometry=GeometrySnapshot.capture(source(world),new BlockPos(-17,-16,-17),new BlockPos(17,18,17),pos->true);
+        GeometrySnapshot geometry;
+        long classifications;
+        com.evanchubbuck.blindstone.diagnostics.WorkMetrics.reset();
+        com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=true;
+        try {
+            geometry=GeometrySnapshot.capture(source(world),new BlockPos(-17,-16,-17),new BlockPos(17,18,17),pos->true);
+            classifications=com.evanchubbuck.blindstone.diagnostics.WorkMetrics.geometryClassifications;
+        } finally {com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=false;}
+        check(helper,classifications>=1 && classifications<=2,"Static stone/air eligibility must be classified once per state in this capture: "+classifications);
         var policy=new ConcealmentPolicy(-32,64);
-        var job=VisibilityEvaluator.createJob(geometry,viewpoint(true),policy,16,Map.of());
+        // The known-mask lookup must not box a chunk key for every candidate cell.
+        int[] knownLookups={0};
+        Map<Long,Map<Integer,SectionVisibility>> known=new java.util.AbstractMap<>() {
+            @Override public java.util.Set<Entry<Long,Map<Integer,SectionVisibility>>> entrySet() {return java.util.Set.of();}
+            @Override public Map<Integer,SectionVisibility> get(Object key) {knownLookups[0]++;return null;}
+        };
+        var job=VisibilityEvaluator.createJob(geometry,viewpoint(true),policy,16,known);
+        check(helper,knownLookups[0]<=9,"Known masks must be imported once per chunk, not looked up with boxed keys per cell: "+knownLookups[0]);
         check(helper,job.totalCandidates()<=200,"Sealed room must omit disconnected air and buried terrain before sorting/ray work: "+job.totalCandidates());
+        // Deterministic expiry at a voxel boundary, with the measured 65,536 allowance.
+        // An expired step must retain its cursor and grant no sight masks.
+        var paused=VisibilityEvaluator.createJob(geometry,viewpoint(true),policy,16,Map.of());
+        var open=GeometrySnapshot.capture(source(Map.of()),new BlockPos(-17,-16,-17),new BlockPos(17,18,17),pos->true);
+        var bounded=VisibilityEvaluator.createJob(open,viewpoint(true),policy,16,Map.of());
+        var slice=bounded.stepRefresh(65536,()->true);
+        check(helper,slice.rayWork()<=16384,"Runtime refresh must cap even a live deadline at 16384 ray operations: "+slice.rayWork());
+        check(helper,!bounded.done(),"Open-volume refresh must retain unfinished work");
+        check(helper,slice.chunks().isEmpty(),"Incomplete runtime slices must defer immutable mask snapshots");
+        while(!bounded.done()) {
+            slice=bounded.stepRefresh(65536,()->true);
+            check(helper,slice.rayWork()<=16384,"Every resumed refresh must retain its ray slice bound");
+            check(helper,bounded.done() || slice.chunks().isEmpty(),"Every incomplete runtime slice defers mask snapshots");
+        }
+        var expired=paused.step(32768,65536,()->false);
+        check(helper,expired.rayWork()==0 && !paused.done(),"Expired visibility step must yield before ray work: "+expired.rayWork());
+        check(helper,!revealed(expired,new BlockPos(3,1,0)),"Unfinished clearance rays cannot reveal a wall");
+        int[] permits={3};
+        var partial=paused.step(32768,65536,()->permits[0]-->0);
+        check(helper,partial.rayWork()<=3 && !paused.done(),"Step must yield inside a ray, preserving its cursor");
+        check(helper,!revealed(partial,new BlockPos(3,1,0)),"Partial clearance cannot grant sight masks");
+        var resumed=paused.step(32768,1_000_000,()->true);
+        check(helper,paused.done() && revealed(resumed,new BlockPos(3,1,0)) && !revealed(resumed,new BlockPos(6,1,0)),"Resuming must complete clear rays and keep sealed terrain hidden");
         var result=job.step(32768,1_000_000);
+        var openResult=VisibilityEvaluator.createJob(open,viewpoint(true),policy,16,Map.of()).step(32768,1_000_000);
+        check(helper,slice.chunks().equals(openResult.chunks()),"Refresh slices must preserve exact final masks");
+        check(helper,resumed.chunks().equals(result.chunks()),"Deadline resumption must grant exactly the uninterrupted masks");
         check(helper,job.done() && result.rayWork()<20000,"Sealed room must finish within a small deterministic ray bound");
         check(helper,revealed(result,new BlockPos(3,1,0)),"Visible wall remains revealed");
         check(helper,!revealed(result,new BlockPos(6,1,0)),"Disconnected exterior stays hidden");
@@ -189,6 +230,7 @@ public final class VisibilityGameTests {
             merge(delivered, last.chunks());
         }
         check(helper, job.done() && steps > 1 && last != null && last.complete(), "Small bounded slices must eventually finish the entire fixed job");
+        check(helper,last.chunks().equals(expected.chunks()),"Final staged masks must retain every completed clear ray and no extra authorization");
         check(helper, job.completedCandidates() == job.totalCandidates(), "No candidate can be lost when a slice ends within its rays");
         for (int y = -4; y <= 5; y++) for (int z = -4; z <= 4; z++) for (int x = -4; x <= 4; x++) {
             BlockPos pos = new BlockPos(x, y, z);

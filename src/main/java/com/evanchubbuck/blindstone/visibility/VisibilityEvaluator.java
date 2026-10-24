@@ -251,7 +251,7 @@ public final class VisibilityEvaluator {
         private final Viewpoint view;
         private final List<BlockPos> candidates = new ArrayList<>();
         private final List<Vec3> origins = new ArrayList<>();
-        private final Map<Long, Map<Integer, BitSet>> safetyBits = new HashMap<>();
+        private final Map<Long, Map<Integer, BitSet>> completedBits = new HashMap<>();
         private final boolean safetyComplete;
         private boolean unavailable;
         private int cameraOffset;
@@ -272,17 +272,21 @@ public final class VisibilityEvaluator {
                 Map<Long,Map<Integer,SectionVisibility>> known,java.util.function.Predicate<BlockPos> eligible) {
             this.geometry = geometry;
             this.view = view;
-            safetyComplete = safety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), null)), MAX_MOVEMENT_SEGMENT), policy, safetyBits);
+            safetyComplete = safety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), null)), MAX_MOVEMENT_SEGMENT), policy, completedBits);
             origins.add(view.eyes());
             cameraOffset = view.thirdPerson() ? 0 : CAMERA_OFFSETS.length;
             BlockPos center = BlockPos.containing(view.eyes());
             BitSet reachable=geometry.reachableSightCells(view.eyes());
+            // Import this viewer's immutable masks once. Primitive lookup avoids a boxed
+            // chunk key allocation for every reachable candidate in the snapshot volume.
+            var knownChunks = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<Map<Integer,SectionVisibility>>(known.size());
+            known.forEach((key,sections)->knownChunks.put(key.longValue(),sections));
             var cursor = new BlockPos.MutableBlockPos();
             for (int y = -range; y <= range; y++) for (int z = -range; z <= range; z++) for (int x = -range; x <= range; x++) {
                 BlockPos pos = cursor.set(center.getX()+x,center.getY()+y,center.getZ()+z);
                 if (policy.protects(pos.getY()) && eligible.test(pos) && geometry.reachableSightCell(reachable,pos)
                         && view.eyes().distanceToSqr(pos.getX()+0.5,pos.getY()+0.5,pos.getZ()+0.5) <= range * range
-                        && !known.getOrDefault(ChunkPos.pack(pos), Map.of()).getOrDefault(pos.getY() >> 4, SectionVisibility.none())
+                        && !knownChunks.getOrDefault(ChunkPos.pack(pos), Map.of()).getOrDefault(pos.getY() >> 4, SectionVisibility.none())
                             .isRevealed(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15))
                     candidates.add(pos.immutable());
             }
@@ -296,18 +300,31 @@ public final class VisibilityEvaluator {
         public boolean intersectsChanged(ChunkPos chunk) { return geometry.intersectsChanged(chunk); }
         public List<Vec3> cameraOrigins() { return List.copyOf(origins); }
 
+        /** One resumable runtime refresh slice. Body safety is delivered separately;
+         * defer immutable mask copies until runtime can publish the completed job. */
+        public Result stepRefresh(int maxRayWork, java.util.function.BooleanSupplier hasTime) {
+            return stepWithTime(32768, Math.min(16384, maxRayWork), hasTime, true);
+        }
+
+        /** Yield at voxel/shape boundaries without revealing an unfinished ray. */
+        public Result step(int maxCandidates, int maxRayWork, java.util.function.BooleanSupplier hasTime) {
+            return stepWithTime(maxCandidates, maxRayWork, hasTime, false);
+        }
+
         public Result step(int maxCandidates, int maxRayWork) {
+            return stepWithTime(maxCandidates, maxRayWork, () -> true, false);
+        }
+
+        private Result stepWithTime(int maxCandidates, int maxRayWork, java.util.function.BooleanSupplier hasTime, boolean completionOnly) {
             if (maxCandidates < 1 || maxCandidates > 100_000 || maxRayWork < 1 || maxRayWork > 20_000_000)
                 throw new IllegalArgumentException("Visibility budgets outside fixed bounds");
-            Budget budget = new Budget(maxRayWork);
-            Map<Long, Map<Integer, BitSet>> bits = new HashMap<>();
-            safetyBits.forEach((chunk, sections) -> {
-                Map<Integer, BitSet> copy = new HashMap<>();
-                sections.forEach((section, mask) -> copy.put(section, (BitSet) mask.clone()));
-                bits.put(chunk, copy);
-            });
+            Budget budget = new Budget(maxRayWork, hasTime);
+            // Keep only completed clear rays (and explicit body safety) across yields.
+            // Runtime publishes this immutable result when the job finishes, avoiding
+            // repeated lighting rebuilds for intermediate slices of the same job.
+            var bits = completedBits;
             // Admit every explicit camera only after all nine clearance rays have completed.
-            while (cameraOffset < CAMERA_OFFSETS.length) {
+            while (cameraOffset < CAMERA_OFFSETS.length && hasTime.getAsBoolean()) {
                 Vec3 camera = view.eyes().add(CAMERA_OFFSETS[cameraOffset].scale(cameraDistance / CAMERA_DISTANCE));
                 if (ray == null) {
                     Vec3 corner = cameraCorner == 8 ? Vec3.ZERO : new Vec3(
@@ -327,7 +344,7 @@ public final class VisibilityEvaluator {
                 } else if (++cameraCorner == 9) { origins.add(camera); nextCamera(); }
             }
             int checked = 0;
-            while (cameraOffset == CAMERA_OFFSETS.length && candidate < candidates.size() && checked < maxCandidates) {
+            while (cameraOffset == CAMERA_OFFSETS.length && candidate < candidates.size() && checked < maxCandidates && hasTime.getAsBoolean()) {
                 BlockPos pos = candidates.get(candidate);
                 if (geometry.cell(pos) == null) {
                     budget.unavailable = true;
@@ -363,7 +380,8 @@ public final class VisibilityEvaluator {
                 }
             }
             unavailable |= budget.unavailable;
-            return result(geometry, bits, done() && !unavailable && safetyComplete, safetyComplete, checked, budget.used);
+            return result(geometry, completionOnly && !done() ? Map.of() : bits,
+                    done() && !unavailable && safetyComplete, safetyComplete, checked, budget.used);
         }
 
         private void nextCamera() {
@@ -412,10 +430,9 @@ public final class VisibilityEvaluator {
             while (true) {
                 if (boxes == null) {
                     if (!budget.spend()) return Ray.EXHAUSTED;
-                    BlockPos pos = new BlockPos(x, y, z);
-                    GeometrySnapshot.Cell cell = geometry.cell(pos);
+                    GeometrySnapshot.Cell cell = geometry.cell(x, y, z);
                     if (cell == null) { budget.unavailable = true; blockedFraction = entryFraction; return Ray.BLOCKED; }
-                    if (pos.equals(target)) return Ray.CLEAR;
+                    if (target != null && x == target.getX() && y == target.getY() && z == target.getZ()) return Ray.CLEAR;
                     boxes = collision ? cell.collision() : cell.sight();
                     box = 0;
                 }
@@ -562,9 +579,11 @@ public final class VisibilityEvaluator {
         private final int limit;
         private int used;
         private boolean unavailable;
-        private Budget(int limit) { this.limit = limit; }
+        private final java.util.function.BooleanSupplier hasTime;
+        private Budget(int limit) { this(limit, () -> true); }
+        private Budget(int limit, java.util.function.BooleanSupplier hasTime) { this.limit = limit; this.hasTime = hasTime; }
         private boolean spend() {
-            if (used >= limit) return false;
+            if (used >= limit || !hasTime.getAsBoolean()) return false;
             if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.rayChecks++;
             used++;
             return true;

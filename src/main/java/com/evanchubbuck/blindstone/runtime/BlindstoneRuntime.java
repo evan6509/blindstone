@@ -253,6 +253,7 @@ public final class BlindstoneRuntime {
     public void refresh(ServerLevel level) {
         checkThread();
         if(!enabled||failed||!supportedWorld(level)||publishing) return;
+        if(com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.chargedPacketNanos+=packetWorkNanos;
         workSpentNanos+=packetWorkNanos;packetWorkNanos=0;
         var sessions=new ArrayList<>(viewers.values());
         if(sessions.isEmpty()) return;
@@ -343,23 +344,24 @@ public final class BlindstoneRuntime {
     }
     private void refreshSight(Session s) {
         var config=configuration.current();var settings=config.settings();
-        // Exterior sight can discover ores only; it cannot publish connected room geometry.
-        boolean exteriorEyes = !s.policy.protects(s.level, BlockPos.containing(s.player.getEyePosition()));
-        if(exteriorEyes && s.policy.ores().targets().isEmpty()) {
-            s.job=null;s.lastRefresh=tick;s.dirty=false;return;
-        }
-        var eyes=s.player.getEyePosition();
-        if(exteriorEyes && s.exteriorEmpty && !s.dirty && s.jobOrigin.distanceToSqr(eyes)<4) return;
-        if(exteriorEyes && (s.job==null || s.jobOrigin.distanceToSqr(eyes)>=4 || s.dirty) && !hasOreWithinView(s)) {
-            s.job=null;s.jobOrigin=eyes;s.exteriorEmpty=true;s.lastRefresh=tick;s.dirty=false;return;
-        }
-        s.exteriorEmpty=false;
-        if(tick-s.lastRefresh<settings.refreshIntervalTicks()&&!s.dirty) return;
         long start=System.nanoTime();
         try {
+            // Exterior sight can discover ores only; it cannot publish connected room geometry.
+            boolean exteriorEyes = !s.policy.protects(s.level, BlockPos.containing(s.player.getEyePosition()));
+            if(exteriorEyes && s.policy.ores().targets().isEmpty()) {
+                s.job=null;s.lastRefresh=tick;s.dirty=false;return;
+            }
+            var eyes=s.player.getEyePosition();
+            if(exteriorEyes && s.exteriorEmpty && !s.dirty && s.jobOrigin.distanceToSqr(eyes)<4) return;
+            if(exteriorEyes && (s.job==null || s.jobOrigin.distanceToSqr(eyes)>=4 || s.dirty) && !hasOreWithinView(s)) {
+                s.job=null;s.jobOrigin=eyes;s.exteriorEmpty=true;s.lastRefresh=tick;s.dirty=false;return;
+            }
+            s.exteriorEmpty=false;
+            if(tick-s.lastRefresh<settings.refreshIntervalTicks()&&!s.dirty) return;
             var view=new VisibilityEvaluator.Viewpoint(s.player.getEyePosition(),s.player.getBoundingBox(),null,true);
             if(s.job!=null&&(s.jobOrigin.distanceToSqr(view.eyes())>=4||s.jobBody.getXsize()!=view.body().getXsize()||s.jobBody.getYsize()!=view.body().getYsize())) s.job=null;
             if(s.job==null) {
+                long buildStart=System.nanoTime();
                 int bound=VisibilityEvaluator.snapshotBlockBound(settings.revealRangeBlocks());
                 if(bound>settings.budgets().maxSnapshotBlocksPerJob()) throw new IllegalStateException("Visibility snapshot exceeds configuration budget");
                 var geometry=VisibilityEvaluator.capture(s.level,view,settings.revealRangeBlocks());
@@ -376,12 +378,20 @@ public final class BlindstoneRuntime {
                     return chunk!=null && s.policy.ores().hides(chunk.getBlockState(pos),pos.getY());
                 }):VisibilityEvaluator.createJob(geometry,view,s.policy,settings.revealRangeBlocks(),known);
                 s.jobOrigin=view.eyes();s.jobBody=view.body();
+                if(com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.sightBuildNanos+=System.nanoTime()-buildStart;
             }
             int remaining=Math.min(rayWorkRemaining,settings.budgets().maxGeometryChecksPerTickPerViewer()-s.rayWorkUsed);
             if(remaining>0&&!s.job.done()) {
-                var sight=s.job.step(32768,remaining);
+                long stepStart=System.nanoTime();
+                var sight=s.job.stepRefresh(remaining,()->hasWorkBudget(start));
+                if(com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) {
+                    com.evanchubbuck.blindstone.diagnostics.WorkMetrics.sightSteps++;
+                    com.evanchubbuck.blindstone.diagnostics.WorkMetrics.sightStepRays+=sight.rayWork();
+                    com.evanchubbuck.blindstone.diagnostics.WorkMetrics.maxSightStepRays=Math.max(com.evanchubbuck.blindstone.diagnostics.WorkMetrics.maxSightStepRays,sight.rayWork());
+                    com.evanchubbuck.blindstone.diagnostics.WorkMetrics.sightStepNanos+=System.nanoTime()-stepStart;
+                }
                 rayWorkRemaining-=sight.rayWork();s.rayWorkUsed+=sight.rayWork();
-                sight.chunks().forEach((key,masks)->{
+                if(s.job.done()) sight.chunks().forEach((key,masks)->{
                     if(s.state.phase(key)!=ViewerState.Phase.UNTRACKED) {
                         var allowed = exteriorEyes ? oreMasks(s, key, masks) : masks;
                         if(allowed.isEmpty())return;

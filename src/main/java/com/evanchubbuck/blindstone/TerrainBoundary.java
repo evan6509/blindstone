@@ -75,6 +75,10 @@ public final class TerrainBoundary {
 
     private static int[] rawHeights(LevelChunk chunk, Entry entry) {
         int[] heights = entry.heights;
+        if (entry.dirty.isEmpty()) return heights;
+        // Tag membership depends only on state during this server-thread scan. Keep this
+        // cache local so world/tag reloads and later mutations cannot reuse old decisions.
+        var classifications = new java.util.IdentityHashMap<net.minecraft.world.level.block.state.BlockState, Boolean>();
         // Recompute only mutated columns. Natural terrain anchors exclude foliage, glass, water
         // and above-ground wooden structures; those stay real above the geological boundary.
         for (int index = entry.dirty.nextSetBit(0); index >= 0; index = entry.dirty.nextSetBit(index + 1)) {
@@ -96,11 +100,18 @@ public final class TerrainBoundary {
                 if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.boundaryCellReads++;
                 var state = section.getBlockState(x, y & 15, z);
                 if (state.isAir()) continue;
-                if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.STONE) || state.is(Blocks.DEEPSLATE)
-                        || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.DIRT)
-                        || state.is(BlockTags.SAND) || state.is(BlockTags.TERRACOTTA)
-                        || state.is(Blocks.GRAVEL) || state.is(Blocks.SNOW_BLOCK)
-                        || state.is(Blocks.PACKED_ICE) || state.is(Blocks.BEDROCK)) {
+                Boolean anchor = classifications.get(state);
+                if (anchor == null) {
+                    if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled)
+                        com.evanchubbuck.blindstone.diagnostics.WorkMetrics.boundaryClassifications++;
+                    anchor = state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.STONE) || state.is(Blocks.DEEPSLATE)
+                            || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.DIRT)
+                            || state.is(BlockTags.SAND) || state.is(BlockTags.TERRACOTTA)
+                            || state.is(Blocks.GRAVEL) || state.is(Blocks.SNOW_BLOCK)
+                            || state.is(Blocks.PACKED_ICE) || state.is(Blocks.BEDROCK);
+                    classifications.put(state, anchor);
+                }
+                if (anchor) {
                     heights[index] = y;
                     break;
                 }

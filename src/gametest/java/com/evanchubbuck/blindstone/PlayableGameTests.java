@@ -165,18 +165,29 @@ public final class PlayableGameTests {
                 initial.put("status","viewer-preparing");
                 try {
                     long preparationStart=System.nanoTime();
-                    for(int n=0;n<count;n++) {
-                        var viewer=new Viewer(helper,origin); viewers.add(viewer);
-                        var cp=viewer.player.chunkPosition();
-                        for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++) {
-                            var chunk=helper.getLevel().getChunk(cp.x()+x,cp.z()+z);
-                            viewer.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
+                    for(int n=0;n<count;n++) viewers.add(new Viewer(helper,origin));
+                    long viewerPreparationNanos=System.nanoTime()-preparationStart;
+                    long[] sendNanos={0};
+                    // Viewer/terrain setup is not production work. Packet construction, synchronous
+                    // interception, and channel processing all belong to the first measured frame.
+                    initial.putAll(settleBenchmark(helper,settings.runtime,viewers,()-> {
+                        long start=System.nanoTime();
+                        for(var viewer:viewers) {
+                            var cp=viewer.player.chunkPosition();
+                            for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++) {
+                                var chunk=helper.getLevel().getChunk(cp.x()+x,cp.z()+z);
+                                viewer.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
+                            }
                         }
-                    }
-                    long preparationNanos=System.nanoTime()-preparationStart;
+                        sendNanos[0]=System.nanoTime()-start;
+                    }));
+                    // Retain the original event gate's entire setup+send scope as well.
+                    long preparationNanos=viewerPreparationNanos+sendNanos[0];
                     initial.put("event_ns",preparationNanos);
+                    initial.put("viewer_preparation_ns",viewerPreparationNanos);
+                    initial.put("initial_send_ns",sendNanos[0]);
                     if(count==8) acceptanceGate(initial,failures,"event_ns",preparationNanos,"<",50_000_000,preparationNanos<50_000_000);
-                    initial.putAll(settleBenchmark(helper,settings.runtime,viewers));initial.put("status","delivered");
+                    initial.put("status","delivered");
                     for(var viewer:viewers) {
                         int chunks=viewer.chunks().size();
                         boolean delivered=chunks>=9 && settings.runtime.inspect(viewer.player).startsWith("Tracked chunks=9;");
@@ -190,6 +201,34 @@ public final class PlayableGameTests {
                     if(cold) {
                         long scans=((Number)initial.get("boundaryScans")).longValue();
                         acceptanceGate(initial,failures,"boundaryScans",scans,">=",9*256,scans>=9*256);
+                        var first=(Map<?,?>)initial.get("first_frame_work");
+                        // Regression: every initial send must enter the measured frame, even
+                        // when the production budget defers the subsequent sight/light work.
+                        long firstQueued=((Number)first.get("queued")).longValue();
+                        acceptanceGate(initial,failures,"first_frame_work.queued",firstQueued,">=",9L*count,firstQueued>=9L*count);
+                        // Packet/safety work may exhaust the real 5-ms budget before sight.
+                        // Prove fresh columns when sight actually runs, within the active prefix;
+                        // legitimate reuse later in that same frame is not prewarming.
+                        @SuppressWarnings("unchecked") var work=(List<Map<String,Long>>)initial.get("frame_work");
+                        int scanFrame=-1;long hitsBeforeScan=0;
+                        for(int frame=0;frame<work.size();frame++) {
+                            if(work.get(frame).get("boundaryScans")>0) {scanFrame=frame;break;}
+                            hitsBeforeScan+=work.get(frame).get("boundaryCacheHits");
+                        }
+                        initial.put("first_scan_frame",scanFrame);initial.put("cache_hits_before_first_scan",hitsBeforeScan);
+                        acceptanceGate(initial,failures,"first_scan_frame",scanFrame,">=",0,scanFrame>=0);
+                        int active=((Number)initial.get("active_samples")).intValue();
+                        acceptanceGate(initial,failures,"first_scan_frame",scanFrame,"<",active,scanFrame>=0&&scanFrame<active);
+                        acceptanceGate(initial,failures,"cache_hits_before_first_scan",hitsBeforeScan,"==",0,hitsBeforeScan==0);
+                        acceptanceGate(initial,failures,"boundaryScans",scans,"==",9*256,scans==9*256);
+                        if(scanFrame>=0) {
+                            initial.put("first_scan_frame_work",work.get(scanFrame));
+                            long freshScans=work.get(scanFrame).get("boundaryScans");
+                            acceptanceGate(initial,failures,"first_scan_frame_work.boundaryScans",freshScans,"==",9*256,freshScans==9*256);
+                        }
+                        long classifications=((Number)initial.get("boundaryClassifications")).longValue();
+                        acceptanceGate(initial,failures,"boundaryClassifications",classifications,">=",1,classifications>=1);
+                        acceptanceGate(initial,failures,"boundaryClassifications",classifications,"<=",64,classifications<=64);
                         long reads=((Number)initial.get("boundaryCellReads")).longValue();
                         acceptanceGate(initial,failures,"boundaryCellReads",reads,"<=",scans*32,reads<=scans*32);
                     }
@@ -200,6 +239,8 @@ public final class PlayableGameTests {
                         var row=new LinkedHashMap<String,Object>();
                         row.put("cache_mode",cold?"cold":"warm-shared");row.put("event",event);row.put("viewers",count);
                         row.put("status","preparing");results.add(row);
+                        if(count==8 && event.equals("ore-exposure"))
+                            assertBenchmarkOre(helper,viewers,origin,Blocks.STONE);
                         long start=System.nanoTime();
                         if(event.equals("single-edit")) terrain.put(origin.offset(1,1,1),Blocks.STONE.defaultBlockState());
                         if(event.equals("ore-exposure")) terrain.put(origin.offset(0,3,0),Blocks.AIR.defaultBlockState());
@@ -225,6 +266,13 @@ public final class PlayableGameTests {
                         row.put("event_ns",eventNanos);row.put("status","settling");
                         try { row.putAll(settleBenchmark(helper,settings.runtime,viewers));row.put("status","delivered"); }
                         catch(RuntimeException | Error failure) {row.put("status","failed");row.put("failure",failure.toString());throw failure;}
+                        if(count==8 && event.equals("ore-exposure")) {
+                            assertBenchmarkOre(helper,viewers,origin,Blocks.DIAMOND_ORE);
+                            row.put("concealed_before_open",true);row.put("discovered_after_open",true);
+                            row.putAll(repeatOreBenchmark(helper,settings.runtime,viewers,terrain,origin,row,failures));
+                        }
+                        if(count==8 && event.equals("roof"))
+                            row.putAll(repeatRoofBenchmark(helper,settings.runtime,viewers,terrain,origin,row,failures));
                         for(var viewer:viewers) {
                             String tracked=settings.runtime.inspect(viewer.player);
                             boolean delivered=tracked.startsWith("Tracked chunks=9;");
@@ -232,7 +280,7 @@ public final class PlayableGameTests {
                             helper.assertTrue(delivered,"Event workload must keep nine tracked chunks per viewer: "+String.join("; ",failures));
                         }
                         row.put("cache_mode",cold?"cold":"warm-shared");row.put("event",event);row.put("viewers",count);row.put("event_ns",eventNanos);
-                        int drain=((Number)row.get("samples")).intValue()-16;
+                        int drain=((Number)row.getOrDefault("drain_refreshes",((Number)row.get("samples")).intValue()-16)).intValue();
                         row.put("drain_refreshes",drain);
                         if(cold && event.equals("stream")) {
                             long scans=((Number)row.get("boundaryScans")).longValue();
@@ -255,6 +303,129 @@ public final class PlayableGameTests {
         helper.succeed();
     }
 
+    /** Twenty identical roof openings with measured restorations between them. Quiet
+     * confirmations never enter either active distribution; every cycle keeps its own gates. */
+    private static Map<String,Object> repeatRoofBenchmark(GameTestHelper helper, BlindstoneRuntime runtime,
+            List<Viewer> viewers,Terrain terrain,BlockPos origin,Map<String,Object> first,List<String> failures) {
+        var cycles=new ArrayList<Map<String,Object>>();
+        var initial=new LinkedHashMap<String,Object>(first);initial.put("cycle",0);initial.put("direction","open");
+        cycles.add(initial);first.put("roof_cycles",cycles);
+        for(int cycle=1;cycle<20;cycle++) for(boolean opening:List.of(false,true)) {
+            var row=new LinkedHashMap<String,Object>();
+            row.put("cache_mode",first.get("cache_mode"));row.put("event","roof");row.put("viewers",8);row.put("cycle",cycle);
+            row.put("direction",opening?"open":"restore");
+            long start=System.nanoTime();
+            terrain.put(origin.offset(0,16,0),opening?Blocks.AIR.defaultBlockState():Blocks.GRASS_BLOCK.defaultBlockState());
+            long eventNanos=System.nanoTime()-start;
+            row.put("event_ns",eventNanos);row.putAll(settleBenchmark(helper,runtime,viewers));
+            cycles.add(row);
+        }
+        return aggregateEventCycles(cycles,first,failures,"roof_cycles","20 roof-opening cycles");
+    }
+
+    private static void assertBenchmarkOre(GameTestHelper helper,List<Viewer> viewers,BlockPos origin,
+            net.minecraft.world.level.block.Block expected) {
+        var target=origin.offset(0,4,0);
+        for(var viewer:viewers) {
+            var packet=viewer.chunks().stream().filter(c->c.x()==(target.getX()>>4)&&c.z()==(target.getZ()>>4)).reduce((a,c)->c).orElseThrow();
+            helper.assertTrue(block(helper.getLevel(),packet,target).is(expected),"Independent ore cycle must deliver "+expected+" at its target");
+        }
+    }
+
+    /** Fresh sessions discard all discoveries; restoring a block alone does not conceal known ore. */
+    private static Map<String,Object> repeatOreBenchmark(GameTestHelper helper,BlindstoneRuntime runtime,
+            List<Viewer> viewers,Terrain terrain,BlockPos origin,Map<String,Object> first,List<String> failures) throws Exception {
+        var cycles=new ArrayList<Map<String,Object>>();
+        var initial=new LinkedHashMap<String,Object>(first);initial.put("cycle",0);initial.put("direction","open");
+        cycles.add(initial);first.put("ore_cycles",cycles);
+        var setups=new ArrayList<Map<String,Object>>();first.put("ore_cycle_setups",setups);
+        for(int cycle=1;cycle<20;cycle++) {
+            var restore=new LinkedHashMap<String,Object>();restore.put("cycle",cycle);restore.put("direction","restore");
+            restore.put("event","ore-exposure");restore.put("viewers",8);
+            long start=System.nanoTime();terrain.put(origin.offset(0,3,0),Blocks.STONE.defaultBlockState());
+            restore.put("event_ns",System.nanoTime()-start);restore.putAll(settleBenchmark(helper,runtime,viewers));cycles.add(restore);
+            // New players, same location and nine chunks, same production defaults. Keep all
+            // setup frames separately so they cannot dilute either event distribution.
+            for(var viewer:viewers) viewer.close();viewers.clear();
+            start=System.nanoTime();
+            for(int n=0;n<8;n++) viewers.add(new Viewer(helper,origin));
+            long preparation=System.nanoTime()-start;long[] send={0};
+            var setup=new LinkedHashMap<String,Object>();setup.put("event","ore-cycle-initial");setup.put("cycle",cycle);setup.put("viewers",8);
+            setup.putAll(settleBenchmark(helper,runtime,viewers,()-> {
+                long sending=System.nanoTime();
+                for(var viewer:viewers) {
+                    var cp=viewer.player.chunkPosition();
+                    for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++)
+                        viewer.connection.send(new ClientboundLevelChunkWithLightPacket(helper.getLevel().getChunk(cp.x()+x,cp.z()+z),helper.getLevel().getLightEngine(),null,null));
+                }
+                send[0]=System.nanoTime()-sending;
+            }));
+            setup.put("event_ns",preparation+send[0]);setups.add(setup);
+            long setupMax=((Number)setup.get("max_ns")).longValue();
+            acceptanceGate(setup,failures,"max_ns",setupMax,"<",50_000_000,setupMax<50_000_000);
+            long setupEvent=preparation+send[0];
+            acceptanceGate(setup,failures,"event_ns",setupEvent,"<",50_000_000,setupEvent<50_000_000);
+            int refreshes=((Number)setup.get("active_samples")).intValue();
+            acceptanceGate(setup,failures,"active_samples",refreshes,"<=",200,refreshes<=200);
+            assertBenchmarkOre(helper,viewers,origin,Blocks.STONE);
+            var opening=new LinkedHashMap<String,Object>();opening.put("cycle",cycle);opening.put("direction","open");
+            opening.put("event","ore-exposure");opening.put("viewers",8);
+            start=System.nanoTime();terrain.put(origin.offset(0,3,0),Blocks.AIR.defaultBlockState());
+            opening.put("event_ns",System.nanoTime()-start);opening.putAll(settleBenchmark(helper,runtime,viewers));cycles.add(opening);
+            assertBenchmarkOre(helper,viewers,origin,Blocks.DIAMOND_ORE);
+            opening.put("concealed_before_open",true);opening.put("discovered_after_open",true);
+        }
+        // These are repeated warm-cache initializations with fresh player state, not cold
+        // initial evidence. Keep their own distribution apart from both event directions.
+        var setupActive=new ArrayList<Long>();
+        for(var setup:setups) {
+            @SuppressWarnings("unchecked") var times=(List<Long>)setup.get("frame_times_ns");
+            int active=((Number)setup.get("active_samples")).intValue();
+            setupActive.addAll(times.subList(0,active));
+        }
+        setupActive.sort(Long::compare);
+        long setupP95=setupActive.get((int)Math.ceil(setupActive.size()*0.95)-1);
+        first.put("ore_setup_active_samples",setupActive.size());first.put("ore_setup_active_p95_ns",setupP95);
+        first.put("ore_setup_sample_scope","19 warm-cache fresh-viewer initializations; each excludes its own 16 quiet confirmations");
+        acceptanceGate(first,failures,"ore_setup_active_p95_ns",setupP95,"<=",10_000_000,setupP95<=10_000_000);
+        return aggregateEventCycles(cycles,first,failures,"ore_cycles","20 ore-opening cycles with fresh viewer state");
+    }
+
+    private static Map<String,Object> aggregateEventCycles(List<Map<String,Object>> cycles,Map<String,Object> first,
+            List<String> failures,String cycleKey,String scope) {
+        var times=new ArrayList<Long>();var active=new ArrayList<Long>();var restoration=new ArrayList<Long>();
+        var frames=new ArrayList<Map<String,Long>>();var diagnostics=new ArrayList<Map<String,Long>>();
+        var totals=new LinkedHashMap<String,Long>();int maxDrain=0;
+        for(var cycle:cycles) {
+            @SuppressWarnings("unchecked") var ct=(List<Long>)cycle.get("frame_times_ns");
+            @SuppressWarnings("unchecked") var cw=(List<Map<String,Long>>)cycle.get("frame_work");
+            @SuppressWarnings("unchecked") var cd=(List<Map<String,Long>>)cycle.get("frame_diagnostics");
+            int drain=ct.size()-16;maxDrain=Math.max(maxDrain,drain);cycle.put("drain_refreshes",drain);
+            acceptanceGate(cycle,failures,"drain_refreshes",drain,"<=",40,drain<=40);
+            long max=((Number)cycle.get("max_ns")).longValue(),event=((Number)cycle.get("event_ns")).longValue();
+            acceptanceGate(cycle,failures,"max_ns",max,"<",50_000_000,max<50_000_000);
+            acceptanceGate(cycle,failures,"event_ns",event,"<",50_000_000,event<50_000_000);
+            (cycle.get("direction").equals("open")?active:restoration).addAll(ct.subList(0,drain));
+            times.addAll(ct);frames.addAll(cw);diagnostics.addAll(cd);
+            for(var frame:cw) frame.forEach((key,value)->totals.merge(key,value,key.equals("maxSightStepRays")?Math::max:Long::sum));
+        }
+        var result=new LinkedHashMap<String,Object>();result.putAll(totals);
+        result.put(cycleKey,cycles);result.put("samples",times.size());result.put("drain_refreshes",maxDrain);
+        result.put("active_sample_scope",scope+"; each cycle excludes its own 16 quiet confirmations");
+        result.put("active_samples",active.size());
+        active.sort(Long::compare);restoration.sort(Long::compare);
+        for(int percentile:List.of(50,95,99)) result.put("active_p"+percentile+"_ns",active.get((int)Math.ceil(active.size()*percentile/100.0)-1));
+        long restoreP95=restoration.get((int)Math.ceil(restoration.size()*0.95)-1);
+        result.put("restoration_active_samples",restoration.size());result.put("restoration_active_p95_ns",restoreP95);
+        acceptanceGate(first,failures,"restoration_active_p95_ns",restoreP95,"<=",10_000_000,restoreP95<=10_000_000);
+        long max=times.stream().mapToLong(Long::longValue).max().orElseThrow();int peak=times.indexOf(max);
+        var sorted=times.stream().mapToLong(Long::longValue).sorted().toArray();
+        for(int percentile:List.of(50,95,99)) result.put("p"+percentile+"_ns",sorted[(int)Math.ceil(sorted.length*percentile/100.0)-1]);
+        result.put("max_ns",max);result.put("max_frame_index",peak);result.put("max_frame_work",frames.get(peak));
+        result.put("frame_times_ns",times);result.put("frame_work",frames);result.put("frame_diagnostics",diagnostics);
+        return result;
+    }
+
     private static void acceptanceFrameGates(Map<String,Object> row,List<String> failures) {
         long p95=((Number)row.get("active_p95_ns")).longValue();
         long max=((Number)row.get("max_ns")).longValue();
@@ -267,12 +438,14 @@ public final class PlayableGameTests {
         if(passed) return;
         var failure=new LinkedHashMap<String,Object>();
         failure.put("event",row.get("event"));failure.put("viewers",row.get("viewers"));
+        if(row.containsKey("cycle")) {failure.put("cycle",row.get("cycle"));failure.put("direction",row.get("direction"));}
         failure.put("gate",gate);failure.put("measured",measured);
         failure.put("required_operator",operator);failure.put("required_bound",bound);
         @SuppressWarnings("unchecked")
         var rowFailures=(List<Map<String,Object>>)row.computeIfAbsent("gate_failures",key->new ArrayList<Map<String,Object>>());
         rowFailures.add(failure);
         failures.add("event="+row.get("event")+" viewers="+row.get("viewers")
+                +(row.containsKey("cycle")?" cycle="+row.get("cycle")+" direction="+row.get("direction"):"")
                 +" gate="+gate+" measured="+measured+" required="+operator+" "+bound);
     }
 
@@ -328,7 +501,7 @@ public final class PlayableGameTests {
                                 long elapsed=System.nanoTime()-start;
                                 if(phase==0) {mutations.add(refreshStart-start);refreshes.add(System.nanoTime()-refreshStart);}
                                 var counts=phase==0?activeCounts:settlingCounts;
-                                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot().forEach((key,value)->counts.merge(key,((Number)value).longValue(),Long::sum));
+                                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot().forEach((key,value)->counts.merge(key,((Number)value).longValue(),key.equals("maxSightStepRays")?Math::max:Long::sum));
                                 counts.merge("packets",(long)viewers.stream().mapToInt(v->v.history.size()).sum()-before,Long::sum);
                                 (phase==0?active:settling).add(elapsed);
                                 com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=false;
@@ -377,23 +550,57 @@ public final class PlayableGameTests {
         helper.succeed();
     }
 
+    @jdk.jfr.Name("blindstone.BenchmarkFrame")
+    @jdk.jfr.StackTrace(false)
+    static final class BenchmarkFrameEvent extends jdk.jfr.Event { long frameId; }
+    private static long benchmarkFrameId;
+
     private static Map<String,Object> settleBenchmark(GameTestHelper helper, BlindstoneRuntime runtime,List<Viewer> viewers) {
+        return settleBenchmark(helper,runtime,viewers,()->{});
+    }
+
+    private static Map<String,Object> settleBenchmark(GameTestHelper helper, BlindstoneRuntime runtime,List<Viewer> viewers,
+            Runnable initialSend) {
         var times=new ArrayList<Long>();var frames=new ArrayList<Map<String,Long>>();var counts=new LinkedHashMap<String,Long>();
+        var diagnostics=new ArrayList<Map<String,Long>>();
+        var threadBean=java.lang.management.ManagementFactory.getThreadMXBean();
+        if(threadBean.isCurrentThreadCpuTimeSupported() && !threadBean.isThreadCpuTimeEnabled())
+            threadBean.setThreadCpuTimeEnabled(true);
+        var collectors=java.lang.management.ManagementFactory.getGarbageCollectorMXBeans();
         try {
             com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=true;
             int idle=0;
             for(int i=0;i<20000;i++) {
                 com.evanchubbuck.blindstone.diagnostics.WorkMetrics.reset();
                 int before=viewers.stream().mapToInt(v->v.history.size()).sum();
-                long start=System.nanoTime();benchmarkTick(helper,runtime,viewers);times.add(System.nanoTime()-start);
+                long gcCountStart=collectors.stream().mapToLong(b->Math.max(0,b.getCollectionCount())).sum();
+                long gcMillisStart=collectors.stream().mapToLong(b->Math.max(0,b.getCollectionTime())).sum();
+                var frameEvent=new BenchmarkFrameEvent();frameEvent.frameId=++benchmarkFrameId;
+                var frameInstant=java.time.Instant.now();
+                frameEvent.begin();
+                long cpuStart=threadBean.getCurrentThreadCpuTime();
+                long start=System.nanoTime();
+                runtime.beginTick();
+                if(i==0) initialSend.run();
+                runtime.refresh(helper.getLevel());
+                for(var viewer:viewers) viewer.pump();
+                times.add(System.nanoTime()-start);
+                long cpuNanos=threadBean.getCurrentThreadCpuTime()-cpuStart;
+                frameEvent.end();frameEvent.commit();
+                diagnostics.add(Map.of("frame_id",frameEvent.frameId,"start_epoch_ns",frameInstant.getEpochSecond()*1_000_000_000L+frameInstant.getNano(),
+                    "thread_cpu_ns",cpuNanos,
+                    "gc_collections",collectors.stream().mapToLong(b->Math.max(0,b.getCollectionCount())).sum()-gcCountStart,
+                    "gc_time_ms",collectors.stream().mapToLong(b->Math.max(0,b.getCollectionTime())).sum()-gcMillisStart));
                 var snapshot=com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot();
                 frames.add(new LinkedHashMap<>(snapshot));
-                snapshot.forEach((key,value)->counts.merge(key,value,Long::sum));
+                snapshot.forEach((key,value)->counts.merge(key,value,key.equals("maxSightStepRays")?Math::max:Long::sum));
                 long packets=viewers.stream().mapToInt(v->v.history.size()).sum()-before;counts.merge("packets",packets,Long::sum);
                 boolean quiet=packets==0&&snapshot.entrySet().stream().allMatch(e->e.getKey().equals("boundaryCacheHits")||e.getValue()==0);
                 idle=quiet?idle+1:0;
                 for(var v:viewers)helper.assertTrue(v.connection.isConnected(),"Settling viewers must remain connected");
                 if(idle==16) {
+                    for(var frame:frames) helper.assertTrue(frame.get("maxSightStepRays")<=16384,
+                            "Every production sight refresh must remain within 16384 rays: "+frame);
                     var sorted=times.stream().mapToLong(Long::longValue).sorted().toArray();
                     var result=new LinkedHashMap<String,Object>();result.putAll(counts);result.put("samples",sorted.length);
                     for(int percentile:List.of(50,95,99))result.put("p"+percentile+"_ns",sorted[(int)Math.ceil(sorted.length*percentile/100.0)-1]);
@@ -403,6 +610,8 @@ public final class PlayableGameTests {
                     result.put("max_ns",sorted[sorted.length-1]);
                     int peak=times.indexOf(sorted[sorted.length-1]);
                     result.put("frame_times_ns",List.copyOf(times));
+                    result.put("frame_work",List.copyOf(frames));
+                    result.put("frame_diagnostics",List.copyOf(diagnostics));
                     result.put("first_frame_work",frames.getFirst());
                     result.put("max_frame_index",peak);result.put("max_frame_work",frames.get(peak));
                     return result;

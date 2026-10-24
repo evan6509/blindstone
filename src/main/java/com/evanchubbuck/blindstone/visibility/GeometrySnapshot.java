@@ -115,10 +115,14 @@ public final class GeometrySnapshot {
             BlockState state = states[i];
             if (state == null) continue;
             if (movingHalo[i] || state.is(Blocks.POWDER_SNOW)) { cells[i] = SOLID; continue; }
+            // Only eligible static cells enter this capture-local cache. Reusing one
+            // also reuses its eligibility decision; halo overrides still take priority.
+            var cached = staticShapes.get(state);
+            if (cached != null) { cells[i] = cached; continue; }
+            if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled)
+                com.evanchubbuck.blindstone.diagnostics.WorkMetrics.geometryClassifications++;
             boolean cacheable = !state.getBlock().hasDynamicShape() && !state.hasOffsetFunction()
                     && !state.getFluidState().is(FluidTags.LAVA);
-            var cached = cacheable ? staticShapes.get(state) : null;
-            if (cached != null) { cells[i] = cached; continue; }
             BlockPos pos = cursor.set(min.getX()+x,min.getY()+y,min.getZ()+z);
             VoxelShape sight = state.getBlock() instanceof HalfTransparentBlock
                     || state.getBlock() instanceof StainedGlassPaneBlock || state.is(Blocks.GLASS_PANE)
@@ -155,7 +159,11 @@ public final class GeometrySnapshot {
     }
 
     Cell cell(BlockPos pos) {
-        int x = pos.getX() - min.getX(), y = pos.getY() - min.getY(), z = pos.getZ() - min.getZ();
+        return cell(pos.getX(), pos.getY(), pos.getZ());
+    }
+
+    Cell cell(int worldX, int worldY, int worldZ) {
+        int x = worldX - min.getX(), y = worldY - min.getY(), z = worldZ - min.getZ();
         return x < 0 || y < 0 || z < 0 || x >= sizeX || y >= sizeY || z >= sizeZ
                 ? null : cells[(y * sizeZ + z) * sizeX + x];
     }
