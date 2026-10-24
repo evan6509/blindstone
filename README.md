@@ -9,7 +9,7 @@ Normal startup enables filtering after required hooks and configuration validate
 ## Install
 
 1. Use a dedicated **Minecraft 26.3** server with **Java 25**, **Fabric Loader 0.19.5**, and **Fabric API 0.163.0+26.3**.
-2. Download the installable JAR from [GitHub Releases](https://github.com/evan6509/blindstone/releases) when available. Put `blindstone-<version>+mc26.3.jar` and the pinned Fabric API JAR in the server's `mods` directory.
+2. No [GitHub Release](https://github.com/evan6509/blindstone/releases) is currently published; Minecraft 26.3 support is unreleased development-branch support. [Build locally](#build-and-test) to produce `build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar`, or download the `blindstone` artifact from a successful [Actions run](https://github.com/evan6509/blindstone/actions/workflows/ci.yml) if available (retained for 14 days). Extract the artifact and put only its installable `blindstone-<version>+mc26.3.jar` and the pinned Fabric API JAR in the server's `mods` directory.
 3. Start the server normally, without the development JVM flag. The first start creates `config/blindstone.json`.
 4. Check `/blindstone status` and `/blindstone verify`. Operators do not receive a viewing bypass.
 
@@ -19,13 +19,13 @@ Use a separate test server or a copy of your world for the alpha's gameplay acce
 
 - Defaults conceal Overworld interiors up to Y<320, using stone at Y≥0 and deepslate below zero. Below Y=64, every undiscovered cell remains concealed. Above it, a cached geological surface boundary keeps mountain exteriors real while concealing buried rooms, storage, air and ores.
 - The public boundary closes narrow shafts and bounded enclosed broad openings without flooding through connected caves. Wooden structures, vegetation, glass and water do not raise the geological boundary. Large openings and unusual terrain require further coverage; see [implementation limits](docs/IMPLEMENTATION.md).
-- Protected sight starts when accepted eyes are inside protected terrain. Shape-aware sight uses the accepted server position and constrained third-person offsets. Knowledge remains per block and per viewer; surface eyes cannot authorize rooms through a shaft.
+- Sight that reveals protected room geometry starts when accepted eyes are inside protected terrain. Exterior eyes can discover ore targets through separate ore-only sight checks. Shape-aware sight uses the accepted server position and constrained third-person offsets. Knowledge remains per block and per viewer; surface eyes cannot authorize rooms through a shaft.
 - A small body and accepted-movement envelope reveals nearby cells immediately. This explicit safety exception can disclose cells just across a wall; it stays fixed under load.
 - Full chunk data, later block/entity updates, bundles and direct vanilla send paths are filtered. Section palettes, counts, block entities and heightmaps describe the filtered representation.
 - Filtered lighting is reconstructed incrementally and published with matching chunk views. Visible torches illuminate revealed air; concealed sources cannot supply protected light. Safe upper-world light is preserved using a documented attenuation bound.
 - Non-player tracking and packet field adapters withhold concealed entities and references. Player entities and ordinary audible activity remain available.
 - Work, queues, masks, light jobs and light caches are bounded. Unsafe or unsupported delivery disconnects the affected viewer instead of reverting to real hidden data.
-- Unchanged accepted body/vehicle paths reuse bounded safety results. Surface eyes skip protected sight entirely; stationary completed sight jobs remain cached. Fully concealed sections use a uniform palette without scanning all 4096 blocks.
+- Unchanged accepted body/vehicle paths reuse bounded safety results. Surface eyes skip room-geometry sight and skip ore sight when no ore targets are nearby; stationary completed sight jobs remain cached. Fully concealed sections use a uniform palette without scanning all 4096 blocks.
 
 [Configuration and commands](docs/CONFIGURATION.md), [packet coverage](docs/PACKET_COVERAGE.md), and [implementation details](docs/IMPLEMENTATION.md) describe the current policies and limits. The [specification](docs/Blindstone-Spec.md) defines the current anti-base policy; acceptance limits remain explicit. See [measured performance](docs/PERFORMANCE.md).
 
@@ -75,13 +75,13 @@ Mountain/base concealment covers the Overworld; native ore filtering also covers
 
 ## Build and release automation
 
-Development commits belong on `codex/development`; `main` requires explicit integration approval. One workflow validates development pushes, pull requests to `main` or `codex/development`, and manual runs. It builds the production JAR, runs release-helper tests and all GameTests, verifies packaging, and records measured in-process workloads. Ordinary admission checks require the manual EULA input. Verified downloads and test evidence are retained as Actions artifacts. These validation events never publish releases.
+Development commits belong on `codex/development`; `main` requires explicit integration approval. One workflow is configured to validate development pushes, pull requests to `main` or `codex/development`, and manual runs. It builds the production JAR, runs release-helper tests and all GameTests, verifies packaging, and records measured in-process workloads. Ordinary admission checks require the manual EULA input. The workflow retains verified downloads as the `blindstone` Actions artifact for 14 days and test evidence as `test-reports` for 7 days; availability depends on a run uploading them. These validation events never publish releases.
 
-Only a successful **push to `main`**, including a merged PR, automatically publishes a GitHub Release. The workflow checks out the exact triggering SHA and holds a single release queue lock through version selection, build, verification, and publication. Pending releases are retained using GitHub's `queue: max` (up to 100 waiting runs).
+No release assets are currently published. The configured release path publishes a GitHub Release only after successful validation of a **push to `main`**, including a merged PR. The workflow checks out the exact triggering SHA and holds a single release queue lock through version selection, build, verification, and publication. Pending releases are retained using GitHub's `queue: max` (up to 100 waiting runs).
 
 The first release uses `mod_version` from `gradle.properties`, currently `0.1.0-alpha.1`. Subsequent releases advance the highest reserved version: `0.1.0-alpha.2`, `0.1.0-alpha.3`, and so on. Tags and all releases, including drafts and prereleases across every API page, reserve numbers. The supported scheme is `MAJOR.MINOR.PATCH`, optionally followed by `-alpha.N`, `-beta.N`, or `-rc.N`. Prerelease counters advance within their channel; stable releases advance the patch. Raising the checked-in baseline above all history starts that new version/channel. Old source versions never reset history.
 
-Each release includes exactly:
+The configured release asset set is exactly:
 
 - `blindstone-<version>+mc26.3.jar`: the platform-independent server mod for Java 25, with matching Fabric/manifest versions and the triggering commit in its manifest.
 - `CHANGELOG.md`: changes since the previous lower-version published ancestor (or full history for the first release), commit/comparison links, installation requirements, and exact source SHA.
