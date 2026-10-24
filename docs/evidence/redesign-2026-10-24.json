@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-24",
+  "baseline_sha": "ba2121cc335b52442f0f352dab5ca74d23ff9805",
+  "source_state": "anti-base redesign working tree on codex/development",
+  "host": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+  "cpu": "Intel Core i5-9400F @ 2.90 GHz, 6 logical/physical cores",
+  "jdk": "Temurin 25.0.4.1+1-LTS",
+  "minecraft": "26.3",
+  "loader": "0.19.5",
+  "fabric_api": "0.163.0+26.3",
+  "loom": "1.17.14",
+  "gradle": "9.6.1",
+  "workers": 2,
+  "gradle_heap": "-Xmx2G",
+  "gametest_heap": "JVM ergonomics; no explicit heap override",
+  "benchmark": {
+    "revealRangeBlocks": 4,
+    "maxWorkNanosPerTick": 50000000,
+    "other_settings": "validated defaults",
+    "warmup_refreshes": 512,
+    "samples_per_event": 64,
+    "post_event_settle_refreshes": 128,
+    "viewers": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "y_surface": 65,
+    "y_underground": 30,
+    "movement_blocks": 0.5,
+    "edit": "one torch placed in room; restored after measurement",
+    "view_distance": "one explicitly delivered tracked chunk per viewer; no chunk streaming",
+    "mods": "Blindstone, pinned Fabric API, Fabric GameTest companion only"
+  },
+  "tests": {
+    "total": 127,
+    "failures": 0,
+    "errors": 0,
+    "python": 32
+  },
+  "artifact": "build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar",
+  "artifact_sha256": "2f7a9da6583c8802e7d9c82d05467eff62790efe0da81b56657044cb9786e525",
+  "admission": "NOT RUN; separate EULA authorization required",
+  "deployment": "NONE",
+  "measurement_scope": "in-process manually stepped production runtime, not real server tick performance"
+}

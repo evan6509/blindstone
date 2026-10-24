@@ -182,6 +182,7 @@ public final class VisibilityEvaluator {
     }
 
     public static GeometrySnapshot captureSafety(ServerLevel level, SafetyInput input, int maxBlocks) {
+        if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.safetyCaptures++;
         SafetyBounds bounds = safetyBounds(input);
         if (bounds == null || bounds.blocks() > maxBlocks || maxBlocks < 1)
             throw new IllegalArgumentException("Accepted body path exceeds its fixed safety budget");
@@ -530,6 +531,7 @@ public final class VisibilityEvaluator {
         private Budget(int limit) { this.limit = limit; }
         private boolean spend() {
             if (used >= limit) return false;
+            if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.rayChecks++;
             used++;
             return true;
         }

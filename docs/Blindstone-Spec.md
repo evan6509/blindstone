@@ -2,10 +2,10 @@
 
 ## Fabric hidden-base protection mod — product and engineering specification
 
-**Status:** Proposed specification; no implementation or protection has been validated.  
-**Date:** October 16, 2026  
+**Status:** Implemented private-alpha anti-base policy; automated evidence and outstanding live acceptance are recorded separately.  
+**Date:** October 24, 2026  
 **Mod ID:** `blindstone`  
-**Initial intended target:** Dedicated Fabric server running Minecraft 26.3. Exact Minecraft, Loader, Fabric API, mappings, and Java versions must be verified and pinned during implementation. This document does not claim existing compatibility.  
+**Pinned target:** Minecraft 26.3, Fabric Loader 0.19.5, Fabric API 0.163.0+26.3, Java 25.  
 **Client requirement:** None; ordinary clients must be able to connect.
 
 ## 1. Purpose
@@ -75,7 +75,7 @@ No claims or owner setup are required. Installing Blindstone on an existing worl
 
 Version 1 targets the Overworld only. Protection is defined by dimension ID and an inclusive minimum/exclusive maximum Y range.
 
-The proposed initial maximum is Y=64, aligned to a chunk-section boundary. This is a starting value for testing, not a universal safe preset. A base at or above the cutoff is outside protection. Surface openings below the cutoff must still reveal correctly.
+The default maximum is Y=64, aligned to a chunk-section boundary. This is a starting value for testing, not a universal safe preset. A base at or above the cutoff is outside protection. Surface openings below the cutoff must still reveal correctly.
 
 Use world minimum height for the lower bound. Configuration must show the effective range in status output and reject invalid dimension/block identifiers or reversed bounds.
 
@@ -104,7 +104,9 @@ Use a chunk/session revision to reject work calculated before block changes, tel
 
 ### 5.4 Reveal rules
 
-The October 17 surface correction treats directly sky-exposed columns and their first neighboring faces as public exterior data in the initial chunk, independently of player distance. Air, foliage, clear water and transparent glass transmit this exterior test; opaque and partial sight blockers stop it. Directly sky-open shafts are public clues. This exception must not recursively reveal covered rooms or connected caves, and public exterior masks must remain separate from accumulated per-viewer underground knowledge. A new roof must invalidate the exterior view and pending light before publication. Other underground reveal decisions follow the rules below.
+All protected cells start concealed. There is no public-exterior or sky-column exception below the exclusive cutoff: air, water, glass, foliage, shafts and neighboring faces do not grant authorization from the surface. Above-cutoff terrain remains real. This intentionally trades low-valley/cave entrance appearance for protection against Y-layer scanners.
+
+Only accepted eyes below the cutoff start protected sight. Accepted body/vehicle cells and their fixed safety envelope remain immediate exceptions at the boundary. Sight jobs retain their immutable origin until movement of at least two blocks, body size change, intersecting geometry/chunk changes or lifecycle/configuration reset. Smaller movements receive immediate body safety, with sight refreshed at the documented rebase threshold. Completed stationary jobs do no repeat ray work. Knowledge is per viewer and accumulates only after publication.
 
 Reveal decisions use the server-accepted player position and real server geometry. Never trust a client-reported camera location or freecam position.
 
@@ -191,9 +193,9 @@ Logs must identify the failing subsystem and distinguish loss of availability fr
 
 ## 10. Configuration and administration
 
-Provide a documented configuration file with these concepts. Syntax and numeric defaults are finalized after the prototype; this is not a copy-ready configuration.
+See CONFIGURATION.md for the validated schema and numeric defaults.
 
-| Setting | Proposed behavior |
+| Setting | Current behavior |
 | --- | --- |
 | Enabled dimensions | Overworld only initially; unsupported dimensions rejected if protection is requested. |
 | Protected Y range | World minimum through Y<64 as an initial test preset; always visible in status. |
@@ -248,7 +250,7 @@ Use ordinary clients plus selected cave-minimap, X-ray/freecam, and ESP clients 
 
 ### Performance evidence
 
-Benchmark identical scenes with Blindstone disabled and enabled, including idle users, simultaneous new-chunk exploration, fast movement, and active base updates. Record hardware, Java/settings, view distance, dimensions, player count, and all installed mods.
+The current deterministic before/after production-path benchmark is documented in PERFORMANCE.md; it is not a real SMP tick benchmark. Future live acceptance should benchmark identical scenes with Blindstone disabled and enabled, including idle users, simultaneous new-chunk exploration, fast movement, and active base updates. Record hardware, Java/settings, view distance, dimensions, player count, and all installed mods.
 
 Report tick-time percentiles, filter CPU cost, reveal delay, memory per player, backlog, and network bytes. Initial engineering targets are p95 added tick work under 5 ms and p95 reveal delay under 100 ms at an explicitly chosen representative SMP load. These are provisional acceptance targets, not demonstrated capacity or fixed guarantees. Revise only with recorded evidence and an explicit scope/performance decision.
 

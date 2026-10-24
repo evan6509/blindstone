@@ -1,6 +1,5 @@
 package com.evanchubbuck.blindstone.network;
 
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
@@ -65,6 +64,7 @@ public final class LightScheduler {
             if (!evictReady()) return false;
         }
         try {
+            if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.lightJobs++;
             jobs.put(key, new Pending(chunk, generation, FilteredLight.begin(chunk, frozenContext), bytes));
         } catch (RuntimeException | Error failure) {
             memory.release(bytes);
@@ -112,16 +112,8 @@ public final class LightScheduler {
 
     /** Every center whose 15-block halo touches this changed chunk is invalidated. */
     public void invalidate(ChunkPos changed) {
-        Iterator<Map.Entry<Long, Pending>> pending = jobs.entrySet().iterator();
-        while (pending.hasNext()) {
-            var value = pending.next().getValue();
-            if (near(value.chunk(), changed)) { pending.remove(); memory.release(value.bytes()); }
-        }
-        Iterator<Map.Entry<Long, Ready>> cached = ready.entrySet().iterator();
-        while (cached.hasNext()) {
-            var entry = cached.next();
-            if (near(ChunkPos.unpack(entry.getKey()), changed)) { cached.remove(); memory.release(entry.getValue().bytes()); }
-        }
+        for (int z = changed.z() - 1; z <= changed.z() + 1; z++)
+            for (int x = changed.x() - 1; x <= changed.x() + 1; x++) remove(ChunkPos.pack(x, z));
     }
 
     public void forget(ChunkPos chunk) { remove(chunk.pack()); }

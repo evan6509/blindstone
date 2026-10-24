@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, codex/development]
   workflow_dispatch:
+    inputs:
+      admission_eula:
+        description: 'Explicitly accept Minecraft EULA for disposable ordinary admission servers'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -91,16 +96,19 @@ jobs:
       - name: Test release helpers
         run: python3 -m unittest discover -s tests -v
       - name: Build private alpha
-        run: ./gradlew --no-daemon clean build
+        run: ./gradlew --no-daemon --max-workers=2 clean build
       - name: Run isolated 26.3 integration tests
-        run: ./gradlew --no-daemon runGametest
+        run: ./gradlew --no-daemon --max-workers=2 runGametest
       - name: Verify server artifact
         run: python3 scripts/verify_jar.py
       - name: Prepare installed production admission test
+        if: github.event_name == 'workflow_dispatch' && inputs.admission_eula
         run: ./gradlew --no-daemon prepareAdmission
       - name: Exercise ordinary offline admission and lifecycle
+        if: github.event_name == 'workflow_dispatch' && inputs.admission_eula
         run: python3 scripts/test_admission.py
       - name: Verify development admission remains closed
+        if: github.event_name == 'workflow_dispatch' && inputs.admission_eula
         run: python3 scripts/test_admission.py --development-denial
       - name: Package and verify user downloads
         run: python3 scripts/release_assets.py package
@@ -117,6 +125,7 @@ jobs:
         with:
           name: test-reports
           path: |
+            build/gametest/benchmark.json
             build/gametest-results.xml
             build/gametest/logs/latest.log
             build/reports/

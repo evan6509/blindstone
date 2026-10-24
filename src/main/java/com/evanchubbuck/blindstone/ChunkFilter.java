@@ -10,7 +10,7 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.levelgen.Heightmap;
 
-/** Isolated vanilla chunk-data prototype. NOT an outgoing packet hook; light is not included. */
+/** Detached vanilla chunk data used by the outgoing pipeline; matching light is supplied separately. */
 public final class ChunkFilter {
     private ChunkFilter() { }
 
@@ -20,11 +20,12 @@ public final class ChunkFilter {
             throw new IllegalStateException("Chunk filtering requires the owning server thread");
         }
         if (!level.dimension().equals(Level.OVERWORLD)) {
-            throw new IllegalArgumentException("Only the Overworld is supported by the spike");
+            throw new IllegalArgumentException("Only the Overworld is supported");
         }
         if (policy.minY() != real.getMinY() || policy.maxY() > real.getMaxY() + 1) {
             throw new IllegalArgumentException("Protection bounds do not fit this world");
         }
+        if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.chunkFilters++;
         Map<Integer, SectionVisibility> masks = Map.copyOf(visibility);
         if (masks.keySet().stream().anyMatch(y -> y < policy.minY() / 16 || y >= policy.maxY() / 16)) {
             throw new IllegalArgumentException("Mask outside protected sections");
@@ -44,19 +45,14 @@ public final class ChunkFilter {
                 view.getSections()[i] = source.copy();
                 continue;
             }
+            if (mask.count() != 0 && com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.partialSections++;
             // Never copy the original block palette: unused entries would reveal hidden content.
-            var initial = mask.isRevealed(0, 0, 0) ? source.getBlockState(0, 0, 0)
-                    : policy.replacement(sectionY * 16);
-            var states = new PalettedContainer<>(initial, level.palettedContainerFactory().blockStatesStrategy());
-            // Section-aligned replacements are uniform. Fully hidden sections need no 4096-cell
-            // palette rebuild, which is the common case underneath an exterior-only chunk.
-            if (mask.count() != 0) for (int y = 0; y < 16; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int x = 0; x < 16; x++) {
-                        states.getAndSetUnchecked(x, y, z, mask.isRevealed(x, y, z)
-                                ? source.getBlockState(x, y, z) : policy.replacement(sectionY * 16 + y));
-                    }
-                }
+            var states = new PalettedContainer<>(policy.replacement(sectionY * 16), level.palettedContainerFactory().blockStatesStrategy());
+            // Uniform replacement is implicit; only authorized cells touch the real source.
+            for (int index = mask.nextRevealedIndex(0); index >= 0; index = mask.nextRevealedIndex(index + 1)) {
+                int x = index & 15, z = (index >> 4) & 15, y = index >> 8;
+                if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) com.evanchubbuck.blindstone.diagnostics.WorkMetrics.sectionWrites++;
+                states.getAndSetUnchecked(x, y, z, source.getBlockState(x, y, z));
             }
             view.getSections()[i] = new LevelChunkSection(states, source.getBiomes().copy());
         }

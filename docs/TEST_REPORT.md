@@ -1,8 +1,19 @@
 # Private alpha test report
 
-## Surface correction — October 17, 2026
+## Anti-base redesign — October 24, 2026
 
-Current source is the surface correction in the working tree on `codex/development`, based on `95a99794cc6b90071130da2df09396858cb86bc0`. The installable JAR remains `build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar`.
+The current policy removes protected public-exterior/sky-column authorization and keeps per-viewer block-level sight/body safety. Full evidence and limitations: [PERFORMANCE.md](PERFORMANCE.md), [machine-readable build summary](evidence/redesign-2026-10-24.json).
+
+- Clean pinned `clean build runGametest` passed with two Gradle workers: **127 total tests, 126 Blindstone tests, zero failures/errors**. Python unit suite: **32 passed**. Artifact verifier and `git diff --check` passed.
+- RED controls first confirmed delivered Y-layer exposure, repeated stationary safety captures, per-tick entity sight capture, global unsent-plan invalidation and 4096 writes for a one-cell partial reveal. Each targeted regression passes after repair; the entity cache also rejects local edits and nearby chunk lifecycle changes.
+- New actual-pipeline initial/resend checks compare complete serialized chunk data against uniform protected replacement, including palettes/counts/heightmaps/block-entity entries, and inspect hidden light plus preserved above-cutoff glass/leaves. Existing sealed-room/independent-viewer, movement, single/section updates, bundle, block entity, light, non-player entity/event, lifecycle and compatibility/limit fixtures remain passing. Four October 17 public-exterior tests were intentionally replaced because their expected disclosure conflicts with the anti-base policy.
+- Baseline vs redesign measured 1/2/4/8 viewers under identical deterministic range-4 workloads. Stationary safety captures fell from 128 per viewer over 64 refreshes to zero. Stationary full sight/chunk/light work was already zero. Stricter concealment increases ray work and worst edit refresh time; see the numeric report, including the eight-viewer max change from 42.63 to 50.07 ms. No overall real-server speedup is claimed.
+- Production JAR SHA-256: `2f7a9da6583c8802e7d9c82d05467eff62790efe0da81b56657044cb9786e525`. Exact pinned server metadata, Java 25 bytecode, mandatory hooks and absence of tests/client classes were audited. The local build manifest labels source `local`; this hash identifies the reviewed working-tree build.
+- No ordinary server/admission harness or EULA acceptance was run. Automatic CI admission steps now require an explicit manual EULA input. Historical admission results below apply only to their old builds. No deployment, release or main merge occurred. Graphical clients/minimaps/profiler, authentication/proxies, modpacks and representative SMP ticks remain untested for this redesign.
+
+## Historical surface correction — October 17, 2026
+
+Historical source was the surface correction in the working tree on `codex/development`, based on `95a99794cc6b90071130da2df09396858cb86bc0`. The installable JAR remains `build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar`.
 
 - `./gradlew --offline --no-daemon build runGametest prepareAdmission` passed; the final `build runGametest` rerun after adding the stale-surface regression also passed. XML reports **126 total tests, 125 Blindstone tests, zero failures/errors**.
 - `python3 scripts/verify_jar.py` passed, including the new surface classifier, exact pins, mandatory hooks and exclusion of test code.

@@ -16,16 +16,16 @@ Use a separate test server or a copy of your world for the alpha's gameplay acce
 ## Current behavior
 
 - The default protected range is world minimum through **Y<64**, using stone at Y≥0 and deepslate below zero. Concealment includes air, fluids, ores, storage and other underground construction.
-- Outdoor air, clear water columns, and the first sky-visible terrain surfaces are preserved in the initial chunk, including below Y=64. Adjacent exterior faces are public too; this does not flood through covered rooms or connected caves. Directly sky-open shafts and terrain beneath foliage/glass are public clues.
-- Shape-aware sight runs in all directions from the accepted server position, including constrained third-person offsets. Authorization is per block, not per cave, section, or chunk.
+- Below the cutoff, surface viewers receive replacement terrain even in sky-open shafts, water, foliage and glass columns. Terrain at Y≥64 stays real. Low valleys and cave entrances below the cutoff intentionally appear filled until approached underground.
+- Protected sight starts only when the accepted eye position is below the cutoff. Shape-aware sight runs in all directions from the accepted server position, including constrained third-person offsets. Authorization is per block, not per cave, section, or chunk.
 - A small body and accepted-movement envelope reveals nearby cells immediately. This explicit safety exception can disclose cells just across a wall; it stays fixed under load.
 - Full chunk data, later block/entity updates, bundles and direct vanilla send paths are filtered. Section palettes, counts, block entities and heightmaps describe the filtered representation.
 - Filtered lighting is reconstructed incrementally and published with matching chunk views. Visible torches illuminate revealed air; concealed sources cannot supply protected light. Safe upper-world light is preserved using a documented attenuation bound.
 - Non-player tracking and packet field adapters withhold concealed entities and references. Player entities and ordinary audible activity remain available.
 - Work, queues, masks, light jobs and light caches are bounded. Unsafe or unsupported delivery disconnects the affected viewer instead of reverting to real hidden data.
-- Exterior columns/masks are cached across viewers. Flying beyond underground reveal range skips sight-geometry capture; public surface cells do not create private reveal resends. Fully concealed sections use a uniform palette without scanning all 4096 blocks.
+- Unchanged accepted body/vehicle paths reuse bounded safety results. Surface eyes skip protected sight entirely; stationary completed sight jobs remain cached. Fully concealed sections use a uniform palette without scanning all 4096 blocks.
 
-[Configuration and commands](docs/CONFIGURATION.md), [packet coverage](docs/PACKET_COVERAGE.md), and [implementation details](docs/IMPLEMENTATION.md) describe the current policies and limits. The [specification](docs/Blindstone-Spec.md) remains the product target, not a statement that every acceptance scenario has passed.
+[Configuration and commands](docs/CONFIGURATION.md), [packet coverage](docs/PACKET_COVERAGE.md), and [implementation details](docs/IMPLEMENTATION.md) describe the current policies and limits. The [specification](docs/Blindstone-Spec.md) defines the current anti-base policy; acceptance limits remain explicit. See [measured performance](docs/PERFORMANCE.md).
 
 ## Build and test
 
@@ -41,17 +41,14 @@ Use a separate test server or a copy of your world for the alpha's gameplay acce
 With a Java 25 JDK on `JAVA_HOME`/`PATH`:
 
 ```sh
-./gradlew --no-daemon clean build runGametest
+./gradlew --no-daemon --max-workers=2 clean build runGametest
 python3 -m unittest discover -s tests -v
 python3 scripts/verify_jar.py
-./gradlew --no-daemon prepareAdmission
-python3 scripts/test_admission.py
-python3 scripts/test_admission.py --development-denial
 ```
 
 The installable artifact is `build/libs/blindstone-0.1.0-alpha.1+mc26.3.jar`. GameTests use `build/gametest`, keep external player admission closed, and write `build/gametest-results.xml`.
 
-The admission harness installs only the production JAR and pinned Fabric API into a fresh `build/admission/<uuid>` world. It binds an ephemeral loopback listener, completes offline login/configuration with two independent headless clients, decodes concealed chunks, exercises lifecycle/rejoin and observes normal keepalives for 20 seconds. It stops its own server and writes `result.json` and `server.log`. It requires no client mod or development flag. The separate `--development-denial` negative control verifies the isolation flag still rejects external logins. These checks also run in CI.
+The admission harness installs only the production JAR and pinned Fabric API into a fresh `build/admission/<uuid>` world. It binds an ephemeral loopback listener, completes offline login/configuration with two independent headless clients, decodes concealed chunks, exercises lifecycle/rejoin and observes normal keepalives for 20 seconds. It stops its own server and writes `result.json` and `server.log`. It requires no client mod or development flag. The separate `--development-denial` negative control verifies the isolation flag still rejects external logins. These ordinary-server checks require separate explicit Minecraft EULA authorization. They are disabled on automatic CI pushes; only a manual workflow with `admission_eula=true` enables them. They were not rerun for this redesign.
 
 For a separate normal-mode development server, prepare `build/smoke/eula.txt` and server properties, then run:
 
@@ -76,7 +73,7 @@ The Overworld is the only protected dimension. Sampled sight can cause delayed r
 
 ## Build and release automation
 
-Development commits belong on `codex/development`; `main` requires explicit integration approval. One workflow validates development pushes, pull requests to `main` or `codex/development`, and manual runs. It builds the production JAR, runs release-helper tests and all GameTests, verifies packaging, and runs both installed-production admission checks. Verified downloads and test evidence are retained as Actions artifacts. These validation events never publish releases.
+Development commits belong on `codex/development`; `main` requires explicit integration approval. One workflow validates development pushes, pull requests to `main` or `codex/development`, and manual runs. It builds the production JAR, runs release-helper tests and all GameTests, verifies packaging, and records measured in-process workloads. Ordinary admission checks require the manual EULA input. Verified downloads and test evidence are retained as Actions artifacts. These validation events never publish releases.
 
 Only a successful **push to `main`**, including a merged PR, automatically publishes a GitHub Release. The workflow checks out the exact triggering SHA and holds a single release queue lock through version selection, build, verification, and publication. Pending releases are retained using GitHub's `queue: max` (up to 100 waiting runs).
 

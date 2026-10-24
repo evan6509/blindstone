@@ -26,6 +26,9 @@ public final class SectionVisibility {
 
     public boolean isRevealed(int x, int y, int z) { return revealed.get(index(x, y, z)); }
 
+    /** Iterate authorized indices without copying or exposing mutable mask storage. */
+    public int nextRevealedIndex(int fromIndex) { return revealed.nextSetBit(fromIndex); }
+
     public int count() { return revealed.cardinality(); }
 
     public SectionVisibility union(SectionVisibility other) {

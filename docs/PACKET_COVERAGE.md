@@ -1,5 +1,7 @@
 # Minecraft 26.3 private-alpha packet coverage
 
+The October 24 anti-base policy removes all public exterior authorization below the cutoff. Initial chunks, resends, updates, entities/events and light use only that viewer's delivered/publishing masks; surface eyes do not run protected sight. Actual-pipeline Y-layer/shaft/resend regressions and the existing path fixtures pass. See [current test evidence](TEST_REPORT.md) and [measured costs](PERFORMANCE.md).
+
 Normal admission opens after required hooks and configuration validate; isolated development admission stays closed. The table describes implemented policies and remaining validation, not a completed public-release acceptance report. The [lexical class index](vanilla-packet-inventory.json) lists 153 outgoing classes and static policy routes; it does not establish runtime observation.
 
 The mandatory `Connection.sendPacket` wrapper runs before the event-loop hop. Listener sends, direct sends and queued actions reach this boundary. Transport/keepalive/disconnect and player chat are intentionally allowed. Every other PLAY send requires the owning server thread, including outside the Overworld; the owner check uses immutable listener ownership before reading player/world state. Unsupported protected-PLAY schemas fail closed. Pre-PLAY protocol states and non-Overworld worlds are outside underground filtering, subject to that thread restriction. Arbitrary direct Netty writes and replacement routes need explicit integration work.

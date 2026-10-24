@@ -62,6 +62,7 @@ public final class GeometrySnapshot {
         long sz = (long) max.getZ() - min.getZ() + 1;
         if (sx < 1 || sy < 1 || sz < 1 || sx > 35 || sy > 35 || sz > 35
                 || sx * sy * sz > MAX_BLOCKS) throw new IllegalArgumentException("Snapshot exceeds fixed geometry bounds");
+        if (com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled) { com.evanchubbuck.blindstone.diagnostics.WorkMetrics.captures++; com.evanchubbuck.blindstone.diagnostics.WorkMetrics.cells += sx * sy * sz; }
         int sizeX = (int) sx, sizeY = (int) sy, sizeZ = (int) sz;
         BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
         int unavailable = 0;

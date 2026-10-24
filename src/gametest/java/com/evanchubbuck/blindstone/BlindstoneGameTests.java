@@ -30,6 +30,19 @@ import net.minecraft.world.level.levelgen.Heightmap;
 /** Actual 26.3 server/codec tests; these do not exercise outgoing interception or connected clients. */
 public final class BlindstoneGameTests {
     @GameTest
+    public void partialSectionsWriteOnlyAuthorizedCells(GameTestHelper helper) {
+        var real=fixture(helper.getLevel());
+        com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=true;
+        com.evanchubbuck.blindstone.diagnostics.WorkMetrics.reset();
+        try {
+            ChunkFilter.snapshot(real,policy(helper.getLevel()),Map.of(1,mask(new BlockPos(2,20,3))));
+            check(helper,com.evanchubbuck.blindstone.diagnostics.WorkMetrics.sectionWrites==1,
+                    "A one-cell reveal must write one real cell into a uniform replacement section");
+        } finally {com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=false;}
+        helper.succeed();
+    }
+
+    @GameTest
     public void concealedRoomsAndSolidTerrainHaveIdenticalPayloads(GameTestHelper helper) {
         var level = helper.getLevel();
         var room = fixture(level);
