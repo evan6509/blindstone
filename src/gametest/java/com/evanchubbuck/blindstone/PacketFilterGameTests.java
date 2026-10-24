@@ -60,6 +60,270 @@ import net.minecraft.world.phys.Vec3;
 /** Decoded vanilla packet fixtures. These tests do not establish real-client behavior. */
 public final class PacketFilterGameTests {
     @GameTest
+    public void mountainShaftAcrossChunkSeamCannotPublishEitherRoom(GameTestHelper helper) {
+        var level=helper.getLevel();
+        var left=mountain(level,false);
+        var right=new LevelChunk(level,new ChunkPos(1,0));
+        var template=mountain(level,false);
+        for(int i=0;i<right.getSections().length;i++) right.getSections()[i]=template.getSections()[i].copy();
+        for(int y=192;y<=208;y++) for(int z=6;z<=9;z++) for(int offset=0;offset<4;offset++) {
+            left.getSection(left.getSectionIndex(y)).setBlockState(12+offset,y&15,z,Blocks.AIR.defaultBlockState());
+            right.getSection(right.getSectionIndex(y)).setBlockState(offset,y&15,z,Blocks.AIR.defaultBlockState());
+        }
+        var policy=com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults().policyFor(level);
+        helper.assertTrue(snapshotState(left,policy,Map.of(),15,192,8).is(Blocks.STONE),"Seam shaft cannot expose left room");
+        helper.assertTrue(snapshotState(right,policy,Map.of(),0,192,8).is(Blocks.STONE),"Seam shaft cannot expose right room");
+        helper.assertTrue(snapshotState(left,policy,Map.of(),8,208,8).is(Blocks.GRASS_BLOCK),"Left exterior survives");
+        helper.assertTrue(snapshotState(right,policy,Map.of(),8,208,8).is(Blocks.GRASS_BLOCK),"Right exterior survives");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void independentOreHeightLimitPreservesHigherExterior(GameTestHelper helper) {
+        var level=helper.getLevel();
+        var chunk=new LevelChunk(level,new ChunkPos(0,0));
+        for(int y: new int[]{255,256,272}) chunk.getSection(chunk.getSectionIndex(y)).setBlockState(8,y&15,8,Blocks.DIAMOND_ORE.defaultBlockState());
+        var policy=com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults().policyFor(level);
+        helper.assertTrue(snapshotState(chunk,policy,Map.of(),8,255,8).is(Blocks.STONE),"Ore below exclusive limit hidden");
+        helper.assertTrue(snapshotState(chunk,policy,Map.of(),8,256,8).is(Blocks.DIAMOND_ORE),"Ore at exclusive limit stays real outside geometry policy");
+        helper.assertTrue(snapshotState(chunk,policy,Map.of(),8,272,8).is(Blocks.DIAMOND_ORE),"Higher exterior ore stays real");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void netherOreTargetsAreHiddenWithoutMountainGeometry(GameTestHelper helper) {
+        var level = helper.getLevel().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        helper.assertTrue(level != null, "Isolated harness must provide the Nether");
+        var real = new LevelChunk(level, new ChunkPos(0, 0));
+        var ores = List.of(Blocks.ANCIENT_DEBRIS, Blocks.NETHER_QUARTZ_ORE, Blocks.NETHER_GOLD_ORE, Blocks.GILDED_BLACKSTONE);
+        for (int x=0;x<ores.size();x++) real.getSection(real.getSectionIndex(80)).setBlockState(x,0,8,ores.get(x).defaultBlockState());
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults().policyFor(level);
+        for (int x=0;x<ores.size();x++) helper.assertTrue(snapshotState(real, policy, Map.of(), x,80,8).is(Blocks.NETHERRACK),
+                "Nether target must use netherrack independently of Overworld geometry");
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 8,80,8).isAir(), "Nether cave geometry stays real");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void oreFilteringIsIndependentOfMountainGeometry(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var real = new LevelChunk(level, new ChunkPos(0, 0));
+        real.getSection(real.getSectionIndex(160)).setBlockState(8, 0, 8, Blocks.DIAMOND_ORE.defaultBlockState());
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(level.getMinY(), level.getMaxY() + 1).policy();
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 8, 160, 8).is(Blocks.STONE),
+                "Ore above an absent mountain boundary must still be hidden independently");
+        var bits = new BitSet(); bits.set(SectionVisibility.index(8, 0, 8));
+        helper.assertTrue(snapshotState(real, policy, Map.of(10, SectionVisibility.from(bits)), 8, 160, 8).is(Blocks.DIAMOND_ORE),
+                "Only the discovering viewer receives the exact real ore");
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 8, 160, 8).is(Blocks.STONE),
+                "Discovery must remain private on resend");
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 9, 160, 8).isAir(),
+                "Ore policy must not fill exterior air");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void broadMountainOpeningDoesNotPublishConnectedRoom(GameTestHelper helper) {
+        var real = mountain(helper.getLevel(), false);
+        // Seven-cell sky opening is wider than the existing radius-two closing.
+        for (int y = 192; y <= 208; y++) for (int z = 5; z <= 11; z++) for (int x = 5; x <= 11; x++)
+            real.getSection(real.getSectionIndex(y)).setBlockState(x, y & 15, z, Blocks.AIR.defaultBlockState());
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(real.getMinY(), real.getMaxY() + 1).policy();
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 8, 192, 8).is(Blocks.STONE),
+                "Broad sky opening must not publish private connected room air");
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 2, 208, 2).is(Blocks.GRASS_BLOCK),
+                "Genuine exterior roof must remain real");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void broadLoadedSeamOpeningKeepsBothRoomsPrivate(GameTestHelper helper) {
+        var level=helper.getLevel();
+        var cp=ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
+        var left=level.getChunk(cp.x(),cp.z());
+        var right=level.getChunk(cp.x()+1,cp.z());
+        var previous=new java.util.HashMap<BlockPos,net.minecraft.world.level.block.state.BlockState>();
+        try {
+            for(int z=0;z<16;z++) for(int x=0;x<32;x++) {
+                var pos=new BlockPos(cp.x()*16+x,208,cp.z()*16+z);
+                previous.put(pos,level.getBlockState(pos));
+                level.getChunkAt(pos).setBlockState(pos,(x>=12&&x<=19&&z>=4&&z<=11?Blocks.AIR:Blocks.GRASS_BLOCK).defaultBlockState(),0);
+            }
+            var policy=com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults().policyFor(level);
+            helper.assertTrue(snapshotState(left,policy,Map.of(),15,192,8).is(Blocks.STONE),"Broad loaded seam left remains private");
+            helper.assertTrue(snapshotState(right,policy,Map.of(),0,192,8).is(Blocks.STONE),"Broad loaded seam right remains private");
+            // Open the enclosure along its complete north/south axis into an ordinary valley.
+            for(int z=0;z<16;z++) for(int x=12;x<=19;x++) {
+                var pos=new BlockPos(cp.x()*16+x,208,cp.z()*16+z);
+                level.getChunkAt(pos).setBlockState(pos,Blocks.AIR.defaultBlockState(),0);
+            }
+            helper.assertTrue(snapshotState(left,policy,Map.of(),15,192,8).isAir(),"Seam valley mutation invalidates left boundary");
+            helper.assertTrue(snapshotState(right,policy,Map.of(),0,192,8).isAir(),"Seam valley mutation invalidates right boundary");
+        } finally { previous.forEach((pos,state)->level.getChunkAt(pos).setBlockState(pos,state,0)); }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void wideValleyAndCliffRemainExterior(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(level.getMinY(), level.getMaxY() + 1).policy();
+        for (boolean cliff : new boolean[] {false, true}) {
+            var real = new LevelChunk(level, new ChunkPos(0, 0));
+            for (int z=0;z<16;z++) for (int x=0;x<16;x++) {
+                int top = (x<4 || !cliff && x>11) ? 208 : 191;
+                for (int y=190;y<=top;y++) real.getSection(real.getSectionIndex(y))
+                        .setBlockState(x,y&15,z,(y==top?Blocks.GRASS_BLOCK:Blocks.STONE).defaultBlockState());
+            }
+            helper.assertTrue(snapshotState(real,policy,Map.of(),8,192,8).isAir(),
+                    "Wide valley/cliff exterior air must remain real");
+            helper.assertTrue(snapshotState(real,policy,Map.of(),8,191,8).is(Blocks.GRASS_BLOCK),
+                    "Wide valley/cliff floor must remain grass");
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void actualSurfaceAtMountainRoomElevationsRemainsReal(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(level.getMinY(), level.getMaxY() + 1).policy();
+        for (int y : new int[] {96, 128, 192}) {
+            var real = new LevelChunk(level, new ChunkPos(0, 0));
+            real.getSection(real.getSectionIndex(y)).setBlockState(8, y & 15, 8, Blocks.GRASS_BLOCK.defaultBlockState());
+            var sections = ChunkFilter.snapshot(real, policy, Map.of()).getReadBuffer();
+            try {
+                for (int i = 0; i < level.getSectionsCount(); i++) {
+                    var section = new LevelChunkSection(level.palettedContainerFactory());
+                    section.read(sections);
+                    if (i == level.getSectionIndex(y)) {
+                        helper.assertTrue(section.getBlockState(8, y & 15, 8).is(Blocks.GRASS_BLOCK),
+                                "A real surface at Y=" + y + " must remain grass");
+                        helper.assertTrue(section.getBlockState(9, y & 15, 8).isAir(),
+                                "External air at Y=" + y + " must remain air");
+                    }
+                }
+            } finally { sections.release(); }
+        }
+        helper.succeed();
+    }
+
+    /** Small detached mountain: three private elevations beneath a real grass roof. */
+    @GameTest
+    public void defaultMountainRoomsAreConcealedInSerializedSections(GameTestHelper helper) {
+        assertMountainSerialization(helper, false);
+        helper.succeed();
+    }
+
+    @GameTest
+    public void defaultMountainOresAreConcealedInSerializedSections(GameTestHelper helper) {
+        assertMountainSerialization(helper, true);
+        helper.succeed();
+    }
+
+    private static void assertMountainSerialization(GameTestHelper helper, boolean ore) {
+        var level = helper.getLevel();
+        var real = mountain(level, ore);
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(level.getMinY(), level.getMaxY() + 1).policy();
+        helper.assertTrue(TerrainBoundary.surface(real, 10, 10) == 208,
+                "Narrow shaft boundary must bridge the roof, got " + TerrainBoundary.surface(real, 10, 10));
+        var data = ChunkFilter.snapshot(real, policy, Map.of());
+        var encoded = new RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+        try {
+            ClientboundLevelChunkWithLightPacket.STREAM_CODEC.encode(encoded,
+                    new ClientboundLevelChunkWithLightPacket(0, 0, data, PacketFilter.darkLight(level)));
+            var decoded = ClientboundLevelChunkWithLightPacket.STREAM_CODEC.decode(encoded);
+            List<BlockPos> hiddenEntities = new ArrayList<>();
+            decoded.chunkData().forEachBlockEntityTag(0, 0, (p, type, tag) -> hiddenEntities.add(p.immutable()));
+            helper.assertTrue(hiddenEntities.isEmpty(), "Mountain storage tags must be absent");
+            var sections = decoded.chunkData().getReadBuffer();
+            try {
+                for (int i = 0; i < level.getSectionsCount(); i++) {
+                    var section = new LevelChunkSection(level.palettedContainerFactory());
+                    section.read(sections);
+                    int sectionY = level.getMinSectionY() + i;
+                    for (int y : new int[] {96, 128, 192}) if (sectionY == y >> 4)
+                        helper.assertTrue(section.getBlockState(8, y & 15, 8).is(Blocks.STONE),
+                                "Undiscovered mountain " + (ore ? "ore" : "room") + " at Y=" + y + " must serialize as stone");
+                    for (int floor : new int[] {96, 128, 192}) if (sectionY == floor >> 4) {
+                        for (int dy = 0; dy < 3; dy++) for (int z = 6; z <= 10; z++) for (int x = 6; x <= 10; x++)
+                            helper.assertTrue(section.getBlockState(x, (floor + dy) & 15, z).is(Blocks.STONE),
+                                    "Entire room including storage/light must be concealed at " + floor);
+                    }
+                    if (sectionY == 12)
+                        helper.assertTrue(section.getBlockState(10, 15, 10).is(Blocks.STONE), "Shaft cannot authorize deep air");
+                    if (sectionY == 13) {
+                        helper.assertTrue(section.getBlockState(8, 0, 8).is(Blocks.GRASS_BLOCK), "Real mountain roof must survive");
+                        helper.assertTrue(section.getBlockState(8, 1, 8).isAir(), "Sky above real mountain must stay air");
+                    }
+                }
+            } finally { sections.release(); }
+        } finally { encoded.release(); }
+    }
+
+    private static LevelChunk mountain(ServerLevel level, boolean ore) {
+        var real = new LevelChunk(level, new ChunkPos(0, 0));
+        for (int y = level.getMinY(); y <= 208; y++)
+            for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++)
+                real.getSection(real.getSectionIndex(y)).setBlockState(x, y & 15, z,
+                        (y == 208 ? Blocks.GRASS_BLOCK : Blocks.STONE).defaultBlockState());
+        for (int floor : new int[] {96, 128, 192}) {
+            for (int y = floor; y < floor + 3; y++)
+                for (int z = 6; z <= 10; z++) for (int x = 6; x <= 10; x++)
+                    real.getSection(real.getSectionIndex(y)).setBlockState(x, y & 15, z, Blocks.AIR.defaultBlockState());
+            real.getSection(real.getSectionIndex(floor)).setBlockState(7, floor & 15, 8, Blocks.CHEST.defaultBlockState());
+            var chest = new ChestBlockEntity(new BlockPos(7, floor, 8), Blocks.CHEST.defaultBlockState());
+            chest.setLevel(level);
+            real.getBlockEntities().put(chest.getBlockPos(), chest);
+            real.getSection(real.getSectionIndex(floor + 1)).setBlockState(9, (floor + 1) & 15, 8, Blocks.TORCH.defaultBlockState());
+        }
+        // A sky-connected shaft must not publish the room it reaches.
+        for (int y = 192; y <= 208; y++)
+            real.getSection(real.getSectionIndex(y)).setBlockState(10, y & 15, 10, Blocks.AIR.defaultBlockState());
+        for (int y : new int[] {96, 128, 192})
+            real.getSection(real.getSectionIndex(y)).setBlockState(8, y & 15, 8,
+                    (ore ? Blocks.DIAMOND_ORE : Blocks.AIR).defaultBlockState());
+        return real;
+    }
+
+    @GameTest
+    public void mountainExplorationIsPrivateAndTerrainRevisionIsLocal(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var real = mountain(level, false);
+        var untouched = mountain(level, false);
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(level.getMinY(), level.getMaxY() + 1).policy();
+        var bits = new BitSet(); bits.set(SectionVisibility.index(8, 0, 8));
+        var explored = Map.of(12, SectionVisibility.from(bits));
+        helper.assertTrue(snapshotState(real, policy, explored, 8, 192, 8).isAir(), "Explorer receives exact room air");
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 8, 192, 8).is(Blocks.STONE), "Second viewer keeps hidden room");
+        helper.assertTrue(!policy.protects(real, 8, 220, 8), "Sky starts public");
+        real.setBlockState(new BlockPos(8, 240, 8), Blocks.STONE.defaultBlockState(), 0);
+        helper.assertTrue(policy.protects(real, 8, 220, 8), "Roof edit invalidates cached column through production mutation hook");
+        helper.assertTrue(!policy.protects(untouched, 8, 220, 8), "Other chunk classification stays independent");
+        real.setBlockState(new BlockPos(8, 240, 8), Blocks.AIR.defaultBlockState(), 0);
+        helper.assertTrue(!policy.protects(real, 8, 220, 8), "Removing roof refreshes boundary");
+        helper.assertTrue(snapshotState(real, policy, Map.of(), 8, 192, 8).is(Blocks.STONE), "Resend still hides room");
+        helper.succeed();
+    }
+
+    private static net.minecraft.world.level.block.state.BlockState snapshotState(LevelChunk real,
+            ConcealmentPolicy policy, Map<Integer, SectionVisibility> masks, int x, int y, int z) {
+        var buffer = ChunkFilter.snapshot(real, policy, masks).getReadBuffer();
+        try {
+            for (int i = 0; i < real.getSections().length; i++) {
+                var section = new LevelChunkSection(real.getLevel().palettedContainerFactory());
+                section.read(buffer);
+                if (i == real.getSectionIndex(y)) return section.getBlockState(x, y & 15, z);
+            }
+            throw new AssertionError("Missing section");
+        } finally { buffer.release(); }
+    }
+
+    @GameTest
     public void fullChunkCodecContainsNoHiddenRoomOrBlockEntity(GameTestHelper helper) {
         var level = helper.getLevel();
         var real = new LevelChunk(level, new ChunkPos(0, 0));

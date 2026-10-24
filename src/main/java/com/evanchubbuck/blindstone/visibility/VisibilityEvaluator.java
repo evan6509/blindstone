@@ -69,14 +69,32 @@ public final class VisibilityEvaluator {
 
     private static GeometrySnapshot captureBounds(ServerLevel level, BlockPos min, BlockPos max) {
         if (!level.getServer().isSameThread()) throw new IllegalStateException("Geometry must be captured on the server thread");
-        Map<Long, LevelChunk> loaded = new HashMap<>();
-        for (int z = min.getZ() >> 4; z <= max.getZ() >> 4; z++) for (int x = min.getX() >> 4; x <= max.getX() >> 4; x++) {
-            LevelChunk chunk = level.getChunkSource().getChunkNow(x, z);
-            if (chunk != null) loaded.put(ChunkPos.pack(x, z), chunk);
-        }
-        // getBlockState is called only after the predicate established a loaded chunk.
-        return GeometrySnapshot.capture(level, min, max, pos -> level.isInsideBuildHeight(pos)
-                && loaded.containsKey(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4)));
+        int minChunkX=min.getX()>>4, minChunkZ=min.getZ()>>4;
+        int width=(max.getX()>>4)-minChunkX+1, depth=(max.getZ()>>4)-minChunkZ+1;
+        // Fixed geometry bounds allow at most four chunks on either horizontal axis.
+        if(width<1 || depth<1 || width>4 || depth>4) throw new IllegalArgumentException("Geometry exceeds chunk bounds");
+        var loaded=new LevelChunk[width*depth];
+        for(int z=0;z<depth;z++) for(int x=0;x<width;x++)
+            loaded[z*width+x]=level.getChunkSource().getChunkNow(minChunkX+x,minChunkZ+z);
+        // Resolve availability and states from the same already-loaded identities. Avoid boxed
+        // chunk-map probes and ServerLevel.getBlockState's second chunk lookup for every cell.
+        var source=new net.minecraft.world.level.BlockGetter() {
+            private LevelChunk chunk(BlockPos pos) {
+                int x=(pos.getX()>>4)-minChunkX,z=(pos.getZ()>>4)-minChunkZ;
+                return x<0||z<0||x>=width||z>=depth?null:loaded[z*width+x];
+            }
+            @Override public int getHeight() {return level.getHeight();}
+            @Override public int getMinY() {return level.getMinY();}
+            @Override public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {return null;}
+            @Override public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {return getBlockState(pos).getFluidState();}
+            @Override public net.minecraft.world.level.block.state.BlockState getBlockState(BlockPos pos) {
+                var chunk=chunk(pos);
+                return chunk==null || !level.isInsideBuildHeight(pos)
+                        ? net.minecraft.world.level.block.Blocks.BEDROCK.defaultBlockState() : chunk.getBlockState(pos);
+            }
+            boolean available(BlockPos pos) {return level.isInsideBuildHeight(pos) && chunk(pos)!=null;}
+        };
+        return GeometrySnapshot.capture(source,min,max,source::available);
     }
 
     /** Exact cells for the eyes-to-target box with one neighbor halo; oversized paths fail closed. */
@@ -164,6 +182,14 @@ public final class VisibilityEvaluator {
         return new Job(geometry, view, policy, range, known);
     }
 
+    /** Exterior discovery authorizes ore targets only; exclude other candidates before tracing. */
+    public static Job createJob(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range,
+            Map<Long,Map<Integer,SectionVisibility>> known, java.util.function.Predicate<BlockPos> eligible) {
+        checkRange(range);
+        if(!geometry.hasSightGeometry()) throw new IllegalArgumentException("Availability-only body snapshot cannot authorize sight");
+        return new Job(geometry,view,policy,range,known,eligible);
+    }
+
     /** Independently refresh this fixed body envelope each tick while an older sight job progresses. */
     public static Result evaluateSafety(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy) {
         return evaluateSafety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), view.previousBody())), MAX_MOVEMENT_SEGMENT), policy);
@@ -239,6 +265,11 @@ public final class VisibilityEvaluator {
 
         private Job(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range,
                 Map<Long, Map<Integer, SectionVisibility>> known) {
+            this(geometry,view,policy,range,known,pos->true);
+        }
+
+        private Job(GeometrySnapshot geometry, Viewpoint view, ConcealmentPolicy policy, int range,
+                Map<Long,Map<Integer,SectionVisibility>> known,java.util.function.Predicate<BlockPos> eligible) {
             this.geometry = geometry;
             this.view = view;
             safetyComplete = safety(geometry, new SafetyInput(List.of(new BodyPath(view.body(), null)), MAX_MOVEMENT_SEGMENT), policy, safetyBits);
@@ -246,15 +277,16 @@ public final class VisibilityEvaluator {
             cameraOffset = view.thirdPerson() ? 0 : CAMERA_OFFSETS.length;
             BlockPos center = BlockPos.containing(view.eyes());
             BitSet reachable=geometry.reachableSightCells(view.eyes());
+            var cursor = new BlockPos.MutableBlockPos();
             for (int y = -range; y <= range; y++) for (int z = -range; z <= range; z++) for (int x = -range; x <= range; x++) {
-                BlockPos pos = center.offset(x, y, z);
-                if (policy.protects(pos.getY()) && geometry.reachableSightCell(reachable,pos)
-                        && Vec3.atCenterOf(pos).distanceToSqr(view.eyes()) <= range * range
+                BlockPos pos = cursor.set(center.getX()+x,center.getY()+y,center.getZ()+z);
+                if (policy.protects(pos.getY()) && eligible.test(pos) && geometry.reachableSightCell(reachable,pos)
+                        && view.eyes().distanceToSqr(pos.getX()+0.5,pos.getY()+0.5,pos.getZ()+0.5) <= range * range
                         && !known.getOrDefault(ChunkPos.pack(pos), Map.of()).getOrDefault(pos.getY() >> 4, SectionVisibility.none())
                             .isRevealed(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15))
-                    candidates.add(pos);
+                    candidates.add(pos.immutable());
             }
-            candidates.sort(Comparator.comparingDouble(pos -> Vec3.atCenterOf(pos).distanceToSqr(view.eyes())));
+            candidates.sort(Comparator.comparingDouble(pos -> view.eyes().distanceToSqr(pos.getX()+0.5,pos.getY()+0.5,pos.getZ()+0.5)));
         }
 
         public boolean done() { return cameraOffset == CAMERA_OFFSETS.length && candidate == candidates.size(); }

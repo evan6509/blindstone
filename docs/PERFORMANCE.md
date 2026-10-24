@@ -1,3 +1,15 @@
+# Acceptance repair verified — 2026-10-24
+
+Cold-cache follow-up: [COLD_CACHE_PERFORMANCE.md](COLD_CACHE_PERFORMANCE.md) records the separate cold 1/2/4/8-viewer regression, profiling, source fixes and clean 151/151 validation. Earlier shared-region eight-viewer tables in this report are warm-cache evidence, not cold-start results.
+
+The broad-opening/security controls and cold, warm-shared and default-range eight-viewer gates pass in isolated synthetic tests. Independent verification passed **151/151 GameTests**, **32 Python tests**, clean build, JAR audit and `git diff --check`. Exact cold/warm p95, max, drain and artifact evidence are in [COLD_CACHE_PERFORMANCE.md](COLD_CACHE_PERFORMANCE.md); the earlier shared-cache repair is in [ACCEPTANCE_REPAIR.md](ACCEPTANCE_REPAIR.md). These measurements are not live-server TPS/capacity claims. The work is confined to `codex/development`; no main merge, release or deployment is authorized or performed.
+
+The following sections are preserved historical checkpoints for their stated revisions. Their failing/pending status is superseded by the repair report above.
+
+> Mountain foundation is not performance acceptance. Terrain classification is cached by chunk identity and invalidated per changed column; serialization retains uniform hidden/public section fast paths. Filtered-light upper copying uses the halo's highest potentially private boundary. The known historical edit/burst drain of 157/158 refreshes remains an open blocker. New matched mountain/ore/open-cave performance and optimization are still required.
+
+Continuation acceptance is failing. The new matched mountain/ore fixture explicitly checks 20/40-refresh single-edit/burst drains and eight-viewer frame bounds; it currently disconnects during four-viewer initialization. Its JFR profile attributes the dominant mod-containing stacks to cooperative lighting. Per-job boundary/palette caching reduces repeated capture overhead but does not resolve the backlog. Unlike historical benchmark-only timing below, these new limits are hard acceptance gates. See [checkpoint and profiling evidence](ORE_PERFORMANCE_CHECKPOINT.md).
+
 # Default-range follow-up — October 24, 2026
 
 The local eight-viewer range-16 movement/edit workload now meets the requested p95 ≤10 ms and max <50 ms targets. This is a bounded synthetic production-path measurement, not a real-player capacity claim. Lighting backlogs remain a material limitation: lower per-refresh cost also spreads work over more refreshes.

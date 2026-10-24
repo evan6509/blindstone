@@ -1,5 +1,7 @@
 # Blindstone
 
+The development implementation combines native configurable ore filtering for the Overworld/Nether with Overworld mountain/base concealment. Latest cold/warm synthetic performance evidence is in [COLD_CACHE_PERFORMANCE.md](docs/COLD_CACHE_PERFORMANCE.md); the earlier [acceptance repair report](docs/ACCEPTANCE_REPAIR.md) preserves the first benchmark phase. This work is confined to `codex/development`; it has not been merged, released, or deployed.
+
 A server-side Fabric **private alpha** that conceals undiscovered Overworld blocks, air pockets, light sources, block entities, and non-player entities separately for each viewer. Ordinary clients can join without installing Blindstone. The server keeps its real world; concealed underground data is replaced only in outgoing views.
 
 Normal startup enables filtering after required hooks and configuration validate. `-Dblindstone.development=true` is reserved for isolated automated tests and deliberately denies player admission. Ordinary offline admission and lifecycle now have a real handshake/configuration regression against the installed production JAR. Graphical gameplay, authenticated/proxy admission, adversarial-client acceptance, and representative SMP capacity remain unverified. See [test evidence](docs/TEST_REPORT.md).
@@ -15,9 +17,9 @@ Use a separate test server or a copy of your world for the alpha's gameplay acce
 
 ## Current behavior
 
-- The default protected range is world minimum through **Y<64**, using stone at Y≥0 and deepslate below zero. Concealment includes air, fluids, ores, storage and other underground construction.
-- Below the cutoff, surface viewers receive replacement terrain even in sky-open shafts, water, foliage and glass columns. Terrain at Y≥64 stays real. Low valleys and cave entrances below the cutoff intentionally appear filled until approached underground.
-- Protected sight starts only when the accepted eye position is below the cutoff. Shape-aware sight runs in all directions from the accepted server position, including constrained third-person offsets. Authorization is per block, not per cave, section, or chunk.
+- Defaults conceal Overworld interiors up to Y<320, using stone at Y≥0 and deepslate below zero. Below Y=64, every undiscovered cell remains concealed. Above it, a cached geological surface boundary keeps mountain exteriors real while concealing buried rooms, storage, air and ores.
+- The public boundary closes narrow shafts and bounded enclosed broad openings without flooding through connected caves. Wooden structures, vegetation, glass and water do not raise the geological boundary. Large openings and unusual terrain require further coverage; see [implementation limits](docs/IMPLEMENTATION.md).
+- Protected sight starts when accepted eyes are inside protected terrain. Shape-aware sight uses the accepted server position and constrained third-person offsets. Knowledge remains per block and per viewer; surface eyes cannot authorize rooms through a shaft.
 - A small body and accepted-movement envelope reveals nearby cells immediately. This explicit safety exception can disclose cells just across a wall; it stays fixed under load.
 - Full chunk data, later block/entity updates, bundles and direct vanilla send paths are filtered. Section palettes, counts, block entities and heightmaps describe the filtered representation.
 - Filtered lighting is reconstructed incrementally and published with matching chunk views. Visible torches illuminate revealed air; concealed sources cannot supply protected light. Safe upper-world light is preserved using a documented attenuation bound.
@@ -69,7 +71,7 @@ python3 scripts/inventory_packets.py
 
 Previously downloaded terrain cannot be erased from a modified client. Player ESP, normal sounds, surface clues, public terrain/biomes, and information shared by other players remain discovery routes. Blindstone provides no seed secrecy, world-generation changes, claims, or anti-cheat.
 
-The Overworld is the only protected dimension. Sampled sight can cause delayed reveals around small openings; supported movement remains bounded. Post-effect identifiers, resource-pack controls and audited server UI metadata have explicit policies. Protected-PLAY cookies, show-dialog schemas and arbitrary mod payloads remain unsupported. Non-transport PLAY packets sent off-thread disconnect even outside the Overworld. Direct Netty writes and replacement send paths need explicit compatibility work. See the [integration audit](docs/COMPATIBILITY.md). Automated admission does not prove graphical playability, profiler resistance, or SMP performance.
+Mountain/base concealment covers the Overworld; native ore filtering also covers the Nether. The End is unprotected. Sampled sight can cause delayed reveals around small openings; supported movement remains bounded. Post-effect identifiers, resource-pack controls and audited server UI metadata have explicit policies. Protected-PLAY cookies, show-dialog schemas and arbitrary mod payloads remain unsupported. Non-transport PLAY packets sent off-thread disconnect even outside the Overworld. Direct Netty writes and replacement send paths need explicit compatibility work. See the [integration audit](docs/COMPATIBILITY.md). Automated admission does not prove graphical playability, profiler resistance, or SMP performance.
 
 ## Build and release automation
 

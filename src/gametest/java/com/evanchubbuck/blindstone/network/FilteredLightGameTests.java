@@ -29,6 +29,41 @@ public final class FilteredLightGameTests {
     private static final BlockState STONE = Blocks.STONE.defaultBlockState();
 
     @GameTest
+    public void mountainTorchAndShaftUseProductionFilteredLighting(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var center = ChunkPos.containing(helper.absolutePos(new BlockPos(1, 1, 1)));
+        var saved = new HashMap<BlockPos, BlockState>();
+        var policy = com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults()
+                .forWorldBounds(level.getMinY(), level.getMaxY() + 1).policy();
+        var context = new PacketFilter.Context() {
+            public ServerLevel level() { return level; }
+            public ConcealmentPolicy policy() { return policy; }
+            public boolean isAuthorized(BlockPos pos) { return false; }
+            public boolean isEntityVisible(int id) { return false; }
+            public Map<Integer, SectionVisibility> masks(ChunkPos chunk) { return Map.of(); }
+        };
+        var source = new BlockPos(center.x() * 16 + 8, 193, center.z() * 16 + 8);
+        try {
+            for (int y = 190; y <= 208; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+                var pos = new BlockPos(center.x() * 16 + x, y, center.z() * 16 + z);
+                saved.put(pos, level.getBlockState(pos));
+                boolean room = y >= 192 && y <= 194 && x >= 6 && x <= 10 && z >= 6 && z <= 10;
+                boolean shaft = x == 10 && z == 10 && y >= 192;
+                level.setBlock(pos, room || shaft ? AIR : STONE, 2);
+            }
+            level.setBlock(source, Blocks.TORCH.defaultBlockState(), 2);
+            var withTorch = FilteredLight.reconstruct(center, context, BUDGET);
+            helper.assertTrue(lightAt(withTorch, false, level, source) == 0, "Hidden mountain torch is dark");
+            helper.assertTrue(lightAt(withTorch, true, level, source) == 0, "Sky-connected narrow shaft cannot light private room");
+            helper.assertTrue(lightAt(withTorch, true, level, source.atY(210)) == 15, "Exterior sky stays bright");
+            level.setBlock(source, STONE, 2);
+            helper.assertTrue(Arrays.equals(encode(withTorch), encode(FilteredLight.reconstruct(center, context, BUDGET))),
+                    "Hidden mountain torch cannot change any outgoing light byte");
+        } finally { saved.forEach((pos, state) -> level.setBlock(pos, state, 2)); }
+        helper.succeed();
+    }
+
+    @GameTest
     public void directSkyIsBrightAboveFilteredSolidCutoffAndDarkBelow(GameTestHelper helper) {
         var result = FilteredLight.reconstructFiltered(0, 32, (x, y, z) -> y < 16 ? STONE : AIR, BUDGET);
         helper.assertTrue(result.skyAt(0, 31, 0) == 15 && result.skyAt(15, 16, 15) == 15,
@@ -216,6 +251,65 @@ public final class FilteredLightGameTests {
             scheduler.reset();
             previous.forEach((pos, state) -> level.setBlock(pos, state, 2));
         }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void netherProductionLightAndUpdatesUseNativeOrePolicy(GameTestHelper helper) {
+        var level=helper.getLevel().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        var chunk=level.getChunk(0,0);var ore=new BlockPos(8,81,8);var lamp=ore.below();
+        var oldOre=level.getBlockState(ore);var oldLamp=level.getBlockState(lamp);
+        var policy=com.evanchubbuck.blindstone.config.BlindstoneConfig.defaults().policyFor(level);
+        var context=new PacketFilter.Context() {
+            public ServerLevel level(){return level;}
+            public ConcealmentPolicy policy(){return policy;}
+            public boolean isAuthorized(BlockPos pos){return !policy.protects(level,pos);}
+            public boolean isEntityVisible(int id){return false;}
+            public Map<Integer,SectionVisibility> masks(ChunkPos pos){return Map.of();}
+        };
+        var scheduler=new LightScheduler(1,2,new LightScheduler.MemoryBudget(32*1024*1024));
+        try {
+            level.setBlock(ore,Blocks.ANCIENT_DEBRIS.defaultBlockState(),2);level.setBlock(lamp,Blocks.GLOWSTONE.defaultBlockState(),2);
+            var update=(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket)PacketFilter.filter(
+                    new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(ore,level.getBlockState(ore)),context);
+            helper.assertTrue(update!=null && update.getBlockState().is(Blocks.NETHERRACK),"Actual Nether update conceals native target");
+            scheduler.request(chunk.getPos(),context,1);complete(helper,scheduler);
+            var light=scheduler.getReady(chunk.getPos(),1);
+            helper.assertTrue(lightAt(light,true,level,lamp)==0 && lightAt(light,false,level,lamp)==15,
+                    "Native Nether light has no skylight and preserves public emission");
+        } finally {scheduler.reset();level.setBlock(ore,oldOre,2);level.setBlock(lamp,oldLamp,2);}
+        helper.succeed();
+    }
+
+    @GameTest
+    public void sharedJobsRequireIdenticalPrivateMasksAndReleaseTheirMemory(GameTestHelper helper) {
+        var level=helper.getLevel();
+        var base=helper.absolutePos(BlockPos.ZERO);
+        var torch=new BlockPos(base.getX()+2,30,base.getZ()+2);
+        var adjacent=torch.east();
+        var oldTorch=level.getBlockState(torch);var oldAir=level.getBlockState(adjacent);
+        var memory=new LightScheduler.MemoryBudget(32*1024*1024);
+        var first=new LightScheduler(2,4,memory);var same=new LightScheduler(2,4,memory);var observer=new LightScheduler(2,4,memory);
+        try {
+            level.setBlock(torch,Blocks.TORCH.defaultBlockState(),2);level.setBlock(adjacent,AIR,2);
+            var chunk=ChunkPos.containing(torch);
+            first.request(chunk,context(level,Set.of(torch,adjacent)),1);
+            long once=memory.usedBytes();
+            same.request(chunk,context(level,Set.of(torch,adjacent)),7);
+            helper.assertTrue(memory.usedBytes()==once,"Equivalent masks from independent sessions share one bounded job");
+            observer.request(chunk,context(level,Set.of()),1);
+            helper.assertTrue(memory.usedBytes()>once,"Different private masks allocate independent work");
+            complete(helper,first);complete(helper,same);complete(helper,observer);
+            helper.assertTrue(first.getReady(chunk,1)==same.getReady(chunk,7),"Identical filtered views share an immutable result");
+            helper.assertTrue(lightAt(first.getReady(chunk,1),false,level,torch)==14
+                    && lightAt(observer.getReady(chunk,1),false,level,torch)==0,"Shared cache never transfers a private torch to another viewer");
+            first.reset();
+            helper.assertTrue(same.getReady(chunk,7)!=null && memory.usedBytes()>0,"One viewer leaving preserves other owners");
+        } finally {
+            first.reset();same.reset();observer.reset();
+            level.setBlock(torch,oldTorch,2);level.setBlock(adjacent,oldAir,2);
+        }
+        helper.assertTrue(memory.usedBytes()==0,"Last owner releases all shared memory");
         helper.succeed();
     }
 

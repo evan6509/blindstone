@@ -53,7 +53,7 @@ public final class FilteredLight {
     public static ClientboundLightUpdatePacketData reconstruct(ChunkPos center, PacketFilter.Context context, Budget budget) {
         var level = context.level();
         if (!level.getServer().isSameThread()) throw new IllegalStateException("Light capture requires the owning server thread");
-        if (!level.dimension().equals(Level.OVERWORLD)) throw new IllegalArgumentException("Filtered light currently supports the Overworld only");
+        if (!level.dimension().equals(Level.OVERWORLD) && !level.dimension().equals(Level.NETHER)) throw new IllegalArgumentException("Filtered light currently supports the Overworld only");
         if (context.policy().minY() != level.getMinY() || context.policy().maxY() > level.getMaxY() + 1) {
             throw new IllegalArgumentException("Protection bounds do not fit the light world");
         }
@@ -71,7 +71,7 @@ public final class FilteredLight {
                 var chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
                 if (chunk != null) {
                     loaded[(chunkZ - center.z() + 1) * 3 + chunkX - center.x() + 1] =
-                            new ChunkSnapshot(chunk, Map.copyOf(context.masks(new ChunkPos(chunkX, chunkZ))));
+                            captureChunk(chunk, Map.copyOf(context.masks(new ChunkPos(chunkX, chunkZ))), context.policy());
                 }
             }
         }
@@ -84,17 +84,13 @@ public final class FilteredLight {
                 var chunk = loaded[chunkIndex];
                 BlockState state = OPAQUE;
                 if (chunk != null) {
-                    boolean authorized = !context.policy().protects(y) || chunk.masks()
-                            .getOrDefault(Math.floorDiv(y, 16), SectionVisibility.none())
-                            .isRevealed(worldX & 15, y & 15, worldZ & 15);
-                    // Do not even read an unauthorized block state, including its emission/opacity.
-                    state = authorized ? chunk.source().getBlockState(cursor.set(worldX, y, worldZ)) : context.policy().replacement(y);
+                    state = chunk.filtered(context.policy(), worldX, y, worldZ);
                 }
                 states[index(x, y - minY, z)] = state;
                 work.checkpoint();
             }
         }
-        return solve(states, minY, maxY, work).packet();
+        return solve(states, minY, maxY, work, level.dimensionType().hasSkyLight()).packet();
     }
 
     /** Pure filtered-world fixture entry point. Caller must supply already-filtered states. */
@@ -110,7 +106,39 @@ public final class FilteredLight {
         return solve(states, minY, maxY, work);
     }
 
-    private record ChunkSnapshot(LevelChunk source, Map<Integer, SectionVisibility> masks) { }
+    private record ChunkSnapshot(LevelChunk source, SectionVisibility[] masks, int[] boundary, boolean[] oreSections, boolean[][] authorizedColumns) {
+        BlockState filtered(com.evanchubbuck.blindstone.ConcealmentPolicy policy, int x, int y, int z) {
+            int section = source.getSectionIndex(y);
+            int lx=x&15, ly=y&15, lz=z&15;
+            if (policy.protects(y) && !masks[section].isRevealed(lx,ly,lz)) {
+                if (policy.terrainEnabled() && (y < policy.exteriorMinY() || boundary != null && y < boundary[lz*16+lx]))
+                    return policy.replacement(y);
+                var state = source.getSections()[section].getBlockState(lx,ly,lz);
+                return oreSections[section] && policy.ores().hides(state,y) ? policy.replacement(y) : state;
+            }
+            return source.getSections()[section].getBlockState(lx,ly,lz);
+        }
+    }
+
+    private static ChunkSnapshot captureChunk(LevelChunk chunk, Map<Integer,SectionVisibility> masks,
+            com.evanchubbuck.blindstone.ConcealmentPolicy policy) {
+        var sections = new SectionVisibility[chunk.getSections().length];
+        var ores = new boolean[sections.length];
+        var columns=new boolean[sections.length][];
+        for (int i=0;i<sections.length;i++) {
+            int sectionY=chunk.getMinSectionY()+i;
+            sections[i]=masks.getOrDefault(sectionY,SectionVisibility.none());
+            if(sections[i].count()!=0) {
+                columns[i]=new boolean[256];
+                for(int bit=sections[i].nextRevealedIndex(0);bit>=0;bit=sections[i].nextRevealedIndex(bit+1))
+                    columns[i][bit&255]=true;
+            }
+            ores[i]=policy.ores().mayHide(chunk.getSections()[i],sectionY*16);
+        }
+        int[] boundary=policy.terrainEnabled() && policy.exteriorMinY()<policy.maxY()
+                ? com.evanchubbuck.blindstone.TerrainBoundary.snapshot(chunk) : null;
+        return new ChunkSnapshot(chunk,sections,boundary,ores,columns);
+    }
 
     @FunctionalInterface
     interface StateSource { BlockState state(int x, int y, int z); }
@@ -121,13 +149,17 @@ public final class FilteredLight {
     }
 
     private static Result solve(BlockState[] states, int minY, int maxY, Work work) {
+        return solve(states, minY, maxY, work, true);
+    }
+
+    private static Result solve(BlockState[] states, int minY, int maxY, Work work, boolean skylight) {
         int height = maxY - minY;
         byte[] sky = new byte[states.length];
         byte[] block = new byte[states.length];
         var queue = new Queue(states.length);
         // All direct sky columns start at a public dimension boundary, not a real heightmap.
         for (int z = 0; z < WIDTH; z++) for (int x = 0; x < WIDTH; x++) {
-            int incoming = 15;
+            int incoming = skylight ? 15 : 0;
             BlockState above = AIR;
             for (int y = height - 1; y >= 0; y--) {
                 int index = index(x, y, z);
@@ -148,7 +180,7 @@ public final class FilteredLight {
             work.checkpoint();
         }
         flood(block, states, height, queue, work);
-        return new Result(packet(sky, block, minY, maxY), sky, block, minY, maxY);
+        return new Result(packet(sky, block, minY, maxY, skylight), sky, block, minY, maxY);
     }
 
     private static void seedFrontier(byte[] light, int height, Queue queue, Work work) {
@@ -198,7 +230,7 @@ public final class FilteredLight {
         }
     }
 
-    private static ClientboundLightUpdatePacketData packet(byte[] sky, byte[] block, int minY, int maxY) {
+    private static ClientboundLightUpdatePacketData packet(byte[] sky, byte[] block, int minY, int maxY, boolean skylight) {
         int sections = (maxY - minY) / 16;
         BitSet skyMask = new BitSet(sections + 2);
         BitSet blockMask = new BitSet(sections + 2);
@@ -222,9 +254,8 @@ public final class FilteredLight {
             appendLayer(section + 1, blockLayer, blockMask, emptyBlock, blockUpdates);
         }
         byte[] topSky = new byte[2048];
-        Arrays.fill(topSky, (byte) 0xff);
-        skyMask.set(sections + 1);
-        skyUpdates.add(topSky);
+        if (skylight) Arrays.fill(topSky, (byte) 0xff);
+        appendLayer(sections + 1, topSky, skyMask, emptySky, skyUpdates);
         emptyBlock.set(sections + 1);
         return new ClientboundLightUpdatePacketData(skyMask, blockMask, emptySky, emptyBlock, skyUpdates, blockUpdates);
     }
@@ -253,9 +284,30 @@ public final class FilteredLight {
      * Direct skylight sources only propagate downward without attenuation. Thus neither hidden
      * emission nor hidden geometry can affect a coordinate Y >= protectedMaxY + 16.
      */
-    public static long estimatedJobBytes(PacketFilter.Context context) {
-        int top = Math.min(context.level().getMaxY() + 1, context.policy().maxY() + 16);
-        long cells = ((long) top - context.level().getMinY() + 32) * PLANE;
+    public static long estimatedJobBytes(ChunkPos center, PacketFilter.Context context) {
+        int worldMin = context.level().getMinY(), worldMax = context.level().getMaxY() + 1;
+        int lowest = Math.min(context.policy().maxY(), context.policy().exteriorMinY() & ~15);
+        int highest = Math.min(context.policy().maxY(), context.policy().exteriorMinY());
+        for (int z = center.z() - 1; z <= center.z() + 1; z++) for (int x = center.x() - 1; x <= center.x() + 1; x++) {
+            var chunk = context.level().getChunkSource().getChunkNow(x, z);
+            if (chunk == null) continue;
+            if (context.policy().terrainEnabled() && context.policy().exteriorMinY() < context.policy().maxY())
+                highest = Math.max(highest, Math.min(context.policy().maxY(),
+                        com.evanchubbuck.blindstone.TerrainBoundary.maximum(chunk) + 1));
+            for (int i = 0; i < chunk.getSections().length; i++) {
+                int sectionMin = (chunk.getMinSectionY() + i) * 16;
+                if (context.policy().ores().mayHide(chunk.getSections()[i], sectionMin))
+                    highest = Math.max(highest, Math.min(context.policy().maxY(),
+                            Math.min(context.policy().ores().maxBlockHeight(), sectionMin + 16)));
+            }
+            for (var entry : context.masks(new ChunkPos(x, z)).entrySet())
+                if (entry.getValue().count() != 0 && context.policy().protects(entry.getKey() * 16))
+                    lowest = Math.min(lowest, entry.getKey() * 16);
+        }
+        int min = lowest == worldMin ? worldMin - 16 : lowest;
+        int safe = ((highest + 15) & ~15) + 16;
+        int max = safe >= worldMax ? worldMax + 16 : safe;
+        long cells = ((long) max - min) * PLANE;
         if (cells < 1 || cells > 2_000_000) throw new BudgetExceededException("Filtered light job exceeds cell bound");
         return cells * 12 + 262144;
     }
@@ -268,7 +320,13 @@ public final class FilteredLight {
         private final ChunkPos center;
         private final PacketFilter.Context context;
         private final ChunkSnapshot[] loaded = new ChunkSnapshot[9];
-        private final BlockState[] states;
+        private final BlockState[][] states;
+        private final int cellCount;
+        private final boolean[] opaqueSections;
+        private final boolean[] opaqueColumnSlabs;
+        private final boolean[] directSkyColumnSlabs;
+        private final boolean[] airColumnSlabs;
+        private final boolean[] darkBlockColumnSlabs;
         private final BlockState[] boundaryStates = new BlockState[PLANE];
         private final byte[] boundarySky = new byte[PLANE];
         private final byte[] boundaryBlock = new byte[PLANE];
@@ -296,6 +354,7 @@ public final class FilteredLight {
         private int packCell;
         private boolean rawSky;
         private boolean rawBlock;
+        private boolean inheritedSky;
         private ClientboundLightUpdatePacketData result;
         private long totalOperations;
         private long totalNanos;
@@ -304,16 +363,26 @@ public final class FilteredLight {
             this.center = center;
             this.context = context;
             requireThread();
-            if (!context.level().dimension().equals(Level.OVERWORLD)) throw new IllegalArgumentException("Filtered light supports the Overworld only");
+            if (!context.level().dimension().equals(Level.OVERWORLD) && !context.level().dimension().equals(Level.NETHER)) throw new IllegalArgumentException("Filtered light supports the Overworld only");
             worldMin = context.level().getMinY();
             worldMax = context.level().getMaxY() + 1;
             if (context.policy().minY() != worldMin || context.policy().maxY() > worldMax) throw new IllegalArgumentException("Invalid light policy bounds");
-            int lowest = context.policy().maxY();
+            int lowest = Math.min(context.policy().maxY(), context.policy().exteriorMinY() & ~15);
+            int highestPrivate = Math.min(context.policy().maxY(), context.policy().exteriorMinY());
             for (int z = center.z() - 1; z <= center.z() + 1; z++) for (int x = center.x() - 1; x <= center.x() + 1; x++) {
                 var chunk = context.level().getChunkSource().getChunkNow(x, z);
                 if (chunk == null) continue;
+                if (context.policy().terrainEnabled() && context.policy().exteriorMinY() < context.policy().maxY())
+                    highestPrivate = Math.max(highestPrivate, Math.min(context.policy().maxY(),
+                            com.evanchubbuck.blindstone.TerrainBoundary.maximum(chunk) + 1));
+                for (int i = 0; i < chunk.getSections().length; i++) {
+                    int sectionMin = (chunk.getMinSectionY() + i) * 16;
+                    if (context.policy().ores().mayHide(chunk.getSections()[i], sectionMin))
+                        highestPrivate = Math.max(highestPrivate, Math.min(context.policy().maxY(),
+                                Math.min(context.policy().ores().maxBlockHeight(), sectionMin + 16)));
+                }
                 var masks = Map.copyOf(context.masks(new ChunkPos(x, z)));
-                loaded[(z - center.z() + 1) * 3 + x - center.x() + 1] = new ChunkSnapshot(chunk, masks);
+                loaded[(z - center.z() + 1) * 3 + x - center.x() + 1] = captureChunk(chunk, masks, context.policy());
                 for (var entry : masks.entrySet()) {
                     int sectionY = entry.getKey() * 16;
                     if (entry.getValue().count() != 0 && context.policy().protects(sectionY)) lowest = Math.min(lowest, sectionY);
@@ -322,12 +391,34 @@ public final class FilteredLight {
             // Everything below the first authorized section is analytically opaque replacement.
             // If that section reaches the build floor, include the public void boundary as air.
             minY = lowest == worldMin ? worldMin - 16 : lowest;
-            safeCopyY = Math.addExact(context.policy().maxY(), 16);
+            safeCopyY = Math.addExact((highestPrivate + 15) & ~15, 16);
             maxY = safeCopyY >= worldMax ? worldMax + 16 : safeCopyY;
             height = maxY - minY;
             int cells = Math.toIntExact((long) height * PLANE);
             if (cells < 1 || cells > 2_000_000) throw new BudgetExceededException("Filtered light job exceeds cell bound");
-            states = new BlockState[cells];
+            cellCount=cells;
+            states = new BlockState[height/16][];
+            // A whole halo slab below every terrain boundary with no private mask is
+            // exactly replacement rock. Do not reconstruct its half-million dark cells.
+            opaqueSections = new boolean[height / 16];
+            opaqueColumnSlabs=new boolean[height/16*PLANE];
+            directSkyColumnSlabs=new boolean[opaqueColumnSlabs.length];
+            airColumnSlabs=new boolean[opaqueColumnSlabs.length];
+            darkBlockColumnSlabs=new boolean[opaqueColumnSlabs.length];
+            for (int slab=0;slab<opaqueSections.length;slab++) {
+                int bottom=minY+slab*16;
+                boolean opaque=context.policy().terrainEnabled() && bottom>=worldMin
+                        && bottom>=context.policy().minY() && bottom+16<=context.policy().maxY();
+                for (var snapshot:loaded) if (snapshot!=null && opaque) {
+                    int section=snapshot.source().getSectionIndex(bottom);
+                    if (snapshot.masks()[section].count()!=0) opaque=false;
+                    if (bottom+16>context.policy().exteriorMinY()) {
+                        if (snapshot.boundary()==null) opaque=false;
+                        else for(int boundary:snapshot.boundary()) if(bottom+16>boundary) {opaque=false;break;}
+                    }
+                }
+                opaqueSections[slab]=opaque;
+            }
             sky = new byte[cells];
             block = new byte[cells];
             queue = new Queue(cells);
@@ -342,7 +433,7 @@ public final class FilteredLight {
         public boolean isDone() { return phase == Phase.DONE; }
         public long totalOperations() { return totalOperations; }
         public long totalNanos() { return totalNanos; }
-        public int cellCount() { return states.length; }
+        public int cellCount() { return cellCount; }
         public ClientboundLightUpdatePacketData result() {
             if (!isDone()) throw new IllegalStateException("Light job is not ready");
             return result;
@@ -354,9 +445,16 @@ public final class FilteredLight {
             if (maxOperations < 1 || maxNanos < 1) throw new IllegalArgumentException("Positive light slice budget required");
             long start = System.nanoTime();
             int operations = 0;
-            while (!isDone() && operations < maxOperations) {
-                operations += one();
-                if ((operations & 255) < 8 && System.nanoTime() - start >= maxNanos) break;
+            boolean expired=false;
+            while (!isDone() && operations < maxOperations && !expired) {
+                var current=phase;
+                long phaseStart=System.nanoTime();
+                do {
+                    operations += one(maxOperations-operations);
+                    if ((operations & 255) < 16 && System.nanoTime() - start >= maxNanos) {expired=true;break;}
+                } while(phase==current && operations<maxOperations);
+                if(com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled)
+                    com.evanchubbuck.blindstone.diagnostics.WorkMetrics.lightPhaseNanos[current.ordinal()]+=System.nanoTime()-phaseStart;
             }
             totalOperations += operations;
             totalNanos += System.nanoTime() - start;
@@ -367,14 +465,55 @@ public final class FilteredLight {
             if (!context.level().getServer().isSameThread()) throw new IllegalStateException("Light jobs require the owning server thread");
         }
 
-        private int one() {
+        private int one(int remainingOperations) {
             switch (phase) {
                 case CAPTURE -> {
-                    int x = offset % WIDTH;
-                    int z = offset / WIDTH % WIDTH;
-                    int y = offset / PLANE + minY;
-                    states[offset] = filtered(x, y, z);
-                    if (++offset == states.length) { offset = 0; phase = Phase.BOUNDARY; }
+                    int column=offset/height;
+                    int relativeY=offset%height;
+                    int x=column%WIDTH,z=column/WIDTH;
+                    int y=minY+relativeY;
+                    int length=Math.min(remainingOperations,Math.min(16-(y&15),height-relativeY));
+                    var snapshot=chunk(x,z);
+                    var policy=context.policy();
+                    int worldX=minX+x,worldZ=minZ+z;
+                    boolean hidden=false;
+                    boolean columnAuthorized=false;
+                    boolean oreSection=false;
+                    int boundary=Integer.MIN_VALUE;
+                    net.minecraft.world.level.chunk.LevelChunkSection section=null;
+                    SectionVisibility mask=SectionVisibility.none();
+                    if(y>=worldMin && y<worldMax && snapshot!=null) {
+                        int si=snapshot.source().getSectionIndex(y);
+                        section=snapshot.source().getSections()[si];
+                        mask=snapshot.masks()[si];
+                        columnAuthorized=snapshot.authorizedColumns()[si]!=null && snapshot.authorizedColumns()[si][(worldZ&15)*16+(worldX&15)];
+                        oreSection=snapshot.oreSections()[si];
+                        boundary=policy.terrainEnabled()?Math.max(policy.exteriorMinY(),snapshot.boundary()==null?policy.exteriorMinY():snapshot.boundary()[(worldZ&15)*16+(worldX&15)]):Integer.MIN_VALUE;
+                        hidden=!columnAuthorized && policy.protects(y) && y+length<=Math.min(policy.maxY(),boundary);
+                    }
+                    opaqueColumnSlabs[(relativeY/16)*PLANE+column]=(snapshot==null || !columnAuthorized
+                            && policy.protects(y&~15) && (y&~15)+16<=Math.min(policy.maxY(),boundary)) && y>=worldMin && y<worldMax;
+                    boolean publicAir=section!=null && section.hasOnlyAir() && (!policy.terrainEnabled()
+                            || y>=policy.maxY() || y>=Math.max(policy.exteriorMinY(),snapshot.boundary()==null?policy.exteriorMinY():snapshot.boundary()[(worldZ&15)*16+(worldX&15)]));
+                    airColumnSlabs[(relativeY/16)*PLANE+column]=publicAir && ((y&~15)>=boundary || !policy.terrainEnabled() || (y&~15)>=policy.maxY());
+                    for(int n=0;!publicAir && !opaqueColumnSlabs[(relativeY/16)*PLANE+column] && n<length;n++) {
+                        BlockState state;
+                        if(y<worldMin || y>=worldMax) state=AIR;
+                        else if(snapshot==null || hidden) state=OPAQUE;
+                        else if(publicAir) state=AIR;
+                        else if(!oreSection && (!policy.terrainEnabled() || y>=boundary || y>=policy.maxY()))
+                            state=section.getBlockState(worldX&15,(y+n)&15,worldZ&15);
+                        else state=snapshot.filtered(policy,worldX,y+n,worldZ);
+                        if(state!=AIR) {
+                            int target=(relativeY+n)*PLANE+column;
+                            int slab=target/(16*PLANE);
+                            if(states[slab]==null) states[slab]=new BlockState[16*PLANE];
+                            states[slab][target%(16*PLANE)]=state;
+                        }
+                    }
+                    offset+=length;
+                    if(offset==cellCount) {offset=0;phase=Phase.BOUNDARY;}
+                    return hidden || publicAir?1:length;
                 }
                 case BOUNDARY -> {
                     int x = offset % WIDTH;
@@ -382,7 +521,7 @@ public final class FilteredLight {
                     var chunk = chunk(x, z);
                     if (maxY >= worldMax) {
                         boundaryStates[offset] = AIR;
-                        boundarySky[offset] = 15;
+                        boundarySky[offset] = (byte) (context.level().dimensionType().hasSkyLight() ? 15 : 0);
                     } else if (chunk == null) boundaryStates[offset] = OPAQUE;
                     else {
                         // maxY == safeCopyY. Every copied input here satisfies the upward-distance proof.
@@ -402,23 +541,77 @@ public final class FilteredLight {
                         incomingSky = boundarySky[column];
                         incomingBlock = boundaryBlock[column];
                     }
-                    var state = states[index];
-                    int dampening = incomingSky == 15 ? state.getLightDampening() : Math.max(1, state.getLightDampening());
-                    incomingSky = Math.max(0, incomingSky - LightEngine.getLightDampeningInto(above, state, Direction.DOWN, dampening));
-                    incomingBlock = Math.max(state.getLightEmission(), incomingBlock - LightEngine.getLightDampeningInto(
-                            above, state, Direction.DOWN, Math.max(1, state.getLightDampening())));
+                    if (opaqueColumnSlabs[(y/16)*PLANE+column]) {
+                        incomingSky=incomingBlock=0; above=OPAQUE;
+                        offset += (y & 15)+1;
+                        if(offset==cellCount) {offset=0;phase=Phase.SKY_SEED;}
+                        return 1;
+                    }
+                    int currentSlab=(y/16)*PLANE+column;
+                    if((y&15)==15 && airColumnSlabs[currentSlab] && above==AIR && incomingSky==15 && incomingBlock==0) {
+                        for(int n=0;n<16;n++) sky[(y-n)*PLANE+column]=15;
+                        directSkyColumnSlabs[currentSlab]=true;
+                        darkBlockColumnSlabs[currentSlab]=true;
+                        offset+=16;
+                        if(offset==cellCount) {offset=0;phase=Phase.SKY_SEED;}
+                        return 1;
+                    }
+                    if(above==AIR && incomingSky==15 && incomingBlock==0 && stateAt(index)==AIR) {
+                        int span=0;
+                        while(span<=(y&15) && stateAt(index-span*PLANE)==AIR) {
+                            sky[index-span*PLANE]=15;span++;
+                        }
+                        if((y&15)==15) {directSkyColumnSlabs[currentSlab]=true;darkBlockColumnSlabs[currentSlab]=true;}
+                        offset+=span;
+                        if(offset==cellCount) {offset=0;phase=Phase.SKY_SEED;}
+                        return 1;
+                    }
+                    var state = stateAt(index);
+                    if(state==OPAQUE || state.getLightDampening()==15) {
+                        incomingSky=0;incomingBlock=state.getLightEmission();
+                    } else if(state==AIR && above==AIR) {
+                        if(incomingSky!=15) incomingSky=Math.max(0,incomingSky-1);
+                        incomingBlock=Math.max(0,incomingBlock-1);
+                    } else {
+                        int dampening = incomingSky == 15 ? state.getLightDampening() : Math.max(1, state.getLightDampening());
+                        incomingSky = Math.max(0, incomingSky - LightEngine.getLightDampeningInto(above, state, Direction.DOWN, dampening));
+                        incomingBlock = Math.max(state.getLightEmission(), incomingBlock - LightEngine.getLightDampeningInto(
+                                above, state, Direction.DOWN, Math.max(1, state.getLightDampening())));
+                    }
                     sky[index] = (byte) incomingSky;
                     block[index] = (byte) incomingBlock;
+                    int slabIndex=(y/16)*PLANE+column;
+                    if((y&15)==15) {directSkyColumnSlabs[slabIndex]=true;darkBlockColumnSlabs[slabIndex]=true;}
+                    directSkyColumnSlabs[slabIndex] &= incomingSky==15 && state==AIR;
+                    darkBlockColumnSlabs[slabIndex] &= incomingBlock==0;
                     above = state;
-                    if (++offset == states.length) { offset = 0; phase = Phase.SKY_SEED; }
+                    if (++offset == cellCount) { offset = 0; phase = Phase.SKY_SEED; }
                 }
                 case SKY_SEED -> {
-                    int cost = 1;
-                    if (sky[offset] > 1) {
-                        cost = 7;
-                        if (hasLowerNeighbor(offset)) queue.add(offset);
+                    int column=offset/height,y=offset%height;
+                    if(opaqueColumnSlabs[(y/16)*PLANE+column]) {
+                        offset+=16-(y&15);
+                        if(offset==cellCount) {offset=0;phase=Phase.SKY_FLOOD;}
+                        return 1;
                     }
-                    if (++offset == states.length) { offset = 0; phase = Phase.SKY_FLOOD; }
+                    int slabIndex=(y/16)*PLANE+column;
+                    int x=column%WIDTH,z=column/WIDTH;
+                    if((y&15)==0 && directSkyColumnSlabs[slabIndex]
+                            && (x==0 || uniformSkyNeighbor(slabIndex-1))
+                            && (x==WIDTH-1 || uniformSkyNeighbor(slabIndex+1))
+                            && (z==0 || uniformSkyNeighbor(slabIndex-WIDTH))
+                            && (z==WIDTH-1 || uniformSkyNeighbor(slabIndex+WIDTH))) {
+                        int bottom=y*PLANE+column,top=(y+15)*PLANE+column;
+                        if(y>0 && !uniformSkyNeighbor(slabIndex-PLANE) && hasLowerNeighbor(bottom)) queue.add(bottom);
+                        if(y+16<height && !uniformSkyNeighbor(slabIndex+PLANE) && hasLowerNeighbor(top)) queue.add(top);
+                        offset+=16;
+                        if(offset==cellCount) {offset=0;phase=Phase.SKY_FLOOD;}
+                        return 1;
+                    }
+                    int index=y*PLANE+column;
+                    int cost=1;
+                    if(sky[index]>1) {cost=7;if(hasLowerNeighbor(index)) queue.add(index);}
+                    if(++offset==cellCount) {offset=0;phase=Phase.SKY_FLOOD;}
                     return cost;
                 }
                 case SKY_FLOOD -> {
@@ -427,8 +620,15 @@ public final class FilteredLight {
                     return 7;
                 }
                 case BLOCK_SEED -> {
-                    if (block[offset] > 1) queue.add(offset);
-                    if (++offset == states.length) { offset = 0; phase = Phase.BLOCK_FLOOD; }
+                    int column=offset/height,y=offset%height;
+                    if(opaqueColumnSlabs[(y/16)*PLANE+column] || darkBlockColumnSlabs[(y/16)*PLANE+column]) {
+                        offset+=16-(y&15);
+                        if(offset==cellCount) {offset=0;phase=Phase.BLOCK_FLOOD;}
+                        return 1;
+                    }
+                    int index=y*PLANE+column;
+                    if(block[index]>1) queue.add(index);
+                    if(++offset==cellCount) {offset=0;phase=Phase.BLOCK_FLOOD;}
                 }
                 case BLOCK_FLOOD -> {
                     if (queue.isEmpty()) phase = Phase.PACK;
@@ -447,15 +647,25 @@ public final class FilteredLight {
             if (chunk == null) return OPAQUE;
             int worldX = minX + x;
             int worldZ = minZ + z;
-            boolean authorized = !context.policy().protects(y) || chunk.masks()
-                    .getOrDefault(Math.floorDiv(y, 16), SectionVisibility.none())
-                    .isRevealed(worldX & 15, y & 15, worldZ & 15);
-            return authorized ? chunk.source().getBlockState(cursor.set(worldX, y, worldZ)) : context.policy().replacement(y);
+            return chunk.filtered(context.policy(), worldX, y, worldZ);
         }
 
         private ChunkSnapshot chunk(int x, int z) {
             return loaded[(Math.floorDiv(minZ + z, 16) - center.z() + 1) * 3
                     + Math.floorDiv(minX + x, 16) - center.x() + 1];
+        }
+
+        /** Null entries represent analytically uniform cells, avoiding redundant reference fills. */
+        private BlockState stateAt(int index) {
+            var slab=states[index/(16*PLANE)];
+            var state=slab==null?null:slab[index%(16*PLANE)];
+            if(state!=null) return state;
+            int y=index/PLANE,column=index%PLANE;
+            return opaqueColumnSlabs[(y/16)*PLANE+column]?OPAQUE:AIR;
+        }
+
+        private boolean uniformSkyNeighbor(int slabIndex) {
+            return directSkyColumnSlabs[slabIndex] || opaqueColumnSlabs[slabIndex];
         }
 
         private boolean hasLowerNeighbor(int from) {
@@ -464,7 +674,10 @@ public final class FilteredLight {
             int y = from / PLANE;
             for (Direction direction : DIRECTIONS) {
                 int nx = x + direction.getStepX(), ny = y + direction.getStepY(), nz = z + direction.getStepZ();
-                if (inside(nx, ny, nz, height) && sky[index(nx, ny, nz)] < sky[from] - 1) return true;
+                if (inside(nx, ny, nz, height)) {
+                    int to=index(nx,ny,nz);
+                    if(sky[to]<sky[from]-1 && stateAt(to).getLightDampening()<sky[from]) return true;
+                }
             }
             return false;
         }
@@ -479,8 +692,8 @@ public final class FilteredLight {
                 if (!inside(nx, ny, nz, height)) continue;
                 int to = index(nx, ny, nz);
                 if (value - 1 <= light[to]) continue;
-                int next = value - LightEngine.getLightDampeningInto(states[from], states[to], direction,
-                        Math.max(1, states[to].getLightDampening()));
+                int next = value - LightEngine.getLightDampeningInto(stateAt(from), stateAt(to), direction,
+                        Math.max(1, stateAt(to).getLightDampening()));
                 if (next > light[to]) { light[to] = (byte) next; if (next > 1) queue.add(to); }
             }
         }
@@ -500,18 +713,23 @@ public final class FilteredLight {
             int sectionY = (lightMinSection + packSection) * 16;
             if (packCell == 0) {
                 // An entire analytically concealed section is uniformly dark and requires no voxel scan.
-                if (sectionY + 16 <= minY) {
+                if (sectionY + 16 <= minY || sectionY>=minY && sectionY<maxY && opaqueSections[(sectionY-minY)/16]) {
                     skyLayers[packSection] = new byte[2048]; blockLayers[packSection] = new byte[2048];
                     packSection++; return;
                 }
-                rawSky = rawBlock = false;
+                rawSky = rawBlock = inheritedSky = false;
                 if (sectionY >= safeCopyY) {
                     var skyData = context.level().getLightEngine().getLayerListener(LightLayer.SKY)
                             .getDataLayerData(SectionPos.of(center.x(), lightMinSection + packSection, center.z()));
                     var blockData = context.level().getLightEngine().getLayerListener(LightLayer.BLOCK)
                             .getDataLayerData(SectionPos.of(center.x(), lightMinSection + packSection, center.z()));
                     if (skyData != null) { skyLayers[packSection] = skyData.copy().getData(); rawSky = true; }
-                    if (blockData != null) { blockLayers[packSection] = blockData.copy().getData(); rawBlock = true; }
+                    if (blockData != null) blockLayers[packSection] = blockData.copy().getData();
+                    else blockLayers[packSection]=new byte[2048];
+                    // Vanilla BlockLightSectionStorage returns zero for a missing layer.
+                    rawBlock=true;
+                    // A missing sky layer inherits the next layer's bottom plane at every Y.
+                    inheritedSky=skyData==null;
                 }
                 if (!rawSky) skyLayers[packSection] = new byte[2048];
                 if (!rawBlock) blockLayers[packSection] = new byte[2048];
@@ -526,10 +744,14 @@ public final class FilteredLight {
                 cursor.set(center.x() * 16 + x, y, center.z() * 16 + z);
                 s = rawSky ? 0 : context.level().getBrightness(LightLayer.SKY, cursor);
                 b = rawBlock ? 0 : context.level().getBrightness(LightLayer.BLOCK, cursor);
-            } else { s = y >= worldMax ? 15 : 0; b = 0; }
+            } else { s = y >= worldMax && context.level().dimensionType().hasSkyLight() ? 15 : 0; b = 0; }
             int shift = (packCell & 1) * 4;
             if (!rawSky) skyLayers[packSection][packCell >> 1] |= (byte) (s << shift);
             if (!rawBlock) blockLayers[packSection][packCell >> 1] |= (byte) (b << shift);
+            if(inheritedSky && packCell==255) {
+                for(int layer=1;layer<16;layer++) System.arraycopy(skyLayers[packSection],0,skyLayers[packSection],layer*128,128);
+                packCell=0;packSection++;return;
+            }
             if (++packCell == 4096) { packCell = 0; packSection++; }
         }
     }
@@ -551,28 +773,30 @@ public final class FilteredLight {
         }
     }
 
-    /** Fixed capacity and duplicate suppression bound queued memory to exactly one entry per cell. */
+    /** Fixed logical capacity, segmented allocation and duplicate suppression. */
     private static final class Queue {
-        private final int[] entries;
-        private final boolean[] queued;
+        private final int capacity;
+        private final int[][] entries;
+        private final BitSet queued;
         private int read;
         private int write;
         private int size;
-        private Queue(int capacity) { entries = new int[capacity]; queued = new boolean[capacity]; }
+        private Queue(int capacity) {
+            this.capacity=capacity;entries=new int[(capacity+4095)/4096][];queued=new BitSet();
+        }
         private void add(int index) {
-            if (queued[index]) return;
-            entries[write] = index;
-            write = (write + 1) % entries.length;
-            size++;
-            queued[index] = true;
+            if(queued.get(index)) return;
+            int segment=write>>12;
+            if(entries[segment]==null) entries[segment]=new int[Math.min(4096,capacity-segment*4096)];
+            entries[segment][write&4095]=index;
+            if(++write==capacity) write=0;
+            size++;queued.set(index);
         }
         private int remove() {
-            int index = entries[read];
-            read = (read + 1) % entries.length;
-            size--;
-            queued[index] = false;
-            return index;
+            int index=entries[read>>12][read&4095];
+            if(++read==capacity) read=0;
+            size--;queued.clear(index);return index;
         }
-        private boolean isEmpty() { return size == 0; }
+        private boolean isEmpty() {return size==0;}
     }
 }

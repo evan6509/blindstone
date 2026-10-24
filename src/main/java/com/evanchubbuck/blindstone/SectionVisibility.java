@@ -29,6 +29,11 @@ public final class SectionVisibility {
     /** Iterate authorized indices without copying or exposing mutable mask storage. */
     public int nextRevealedIndex(int fromIndex) { return revealed.nextSetBit(fromIndex); }
 
+    @Override public boolean equals(Object other) {
+        return this==other || other instanceof SectionVisibility mask && revealed.equals(mask.revealed);
+    }
+    @Override public int hashCode() { return revealed.hashCode(); }
+
     public int count() { return revealed.cardinality(); }
 
     public SectionVisibility union(SectionVisibility other) {

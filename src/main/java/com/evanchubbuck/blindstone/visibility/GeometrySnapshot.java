@@ -56,7 +56,8 @@ public final class GeometrySnapshot {
         this.sightGeometry = sightGeometry;
     }
 
-    /** Copies states first, then resolves neighbor-dependent shapes against that same frozen copy. */
+    /** Copies states first, then resolves neighbor-dependent shapes against that same frozen copy.
+     * Source and availability reads use a reusable position cursor; no cursor is retained. */
     public static GeometrySnapshot capture(BlockGetter source, BlockPos min, BlockPos max,
             Predicate<BlockPos> available) {
         long sx = (long) max.getX() - min.getX() + 1;
@@ -68,8 +69,9 @@ public final class GeometrySnapshot {
         int sizeX = (int) sx, sizeY = (int) sy, sizeZ = (int) sz;
         BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
         int unavailable = 0;
+        var cursor = new BlockPos.MutableBlockPos();
         for (int y = 0; y < sizeY; y++) for (int z = 0; z < sizeZ; z++) for (int x = 0; x < sizeX; x++) {
-            BlockPos pos = min.offset(x, y, z);
+            BlockPos pos = cursor.set(min.getX()+x,min.getY()+y,min.getZ()+z);
             if (available.test(pos)) states[(y * sizeZ + z) * sizeX + x] = source.getBlockState(pos);
             else unavailable++;
         }
@@ -115,8 +117,9 @@ public final class GeometrySnapshot {
             if (movingHalo[i] || state.is(Blocks.POWDER_SNOW)) { cells[i] = SOLID; continue; }
             boolean cacheable = !state.getBlock().hasDynamicShape() && !state.hasOffsetFunction()
                     && !state.getFluidState().is(FluidTags.LAVA);
-            if (cacheable && staticShapes.containsKey(state)) { cells[i] = staticShapes.get(state); continue; }
-            BlockPos pos = min.offset(x, y, z);
+            var cached = cacheable ? staticShapes.get(state) : null;
+            if (cached != null) { cells[i] = cached; continue; }
+            BlockPos pos = cursor.set(min.getX()+x,min.getY()+y,min.getZ()+z);
             VoxelShape sight = state.getBlock() instanceof HalfTransparentBlock
                     || state.getBlock() instanceof StainedGlassPaneBlock || state.is(Blocks.GLASS_PANE)
                     ? Shapes.empty() : state.getVisualShape(frozen, pos, CollisionContext.empty());

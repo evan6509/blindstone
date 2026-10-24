@@ -1,4 +1,8 @@
+Implementation update (2026-10-24): bounded cardinal terrain horizons supplement narrow-hole closing; public exterior remains separate from per-viewer discovery. Common `#c:ores` resolves by default. Native Nether ore/update/light coverage and production-path range-16 acceptance gates are included. See [repair evidence and classifier limits](ACCEPTANCE_REPAIR.md); this remains deterministic filtering, not a full AntiXray engine-mode port.
+
 # Blindstone
+
+Development scope update: independent deterministic ore targets now supplement the Overworld mountain policy, with a separate Nether ore-only policy. The packet authorization rule is private discovery or a non-target public state. Exterior sight may authorize targeted ore, never connected room geometry. No random decoy engines or operator bypass are implemented. See [the unaccepted continuation checkpoint](ORE_PERFORMANCE_CHECKPOINT.md); older version-1 dimension statements below describe the earlier scope.
 
 ## Fabric hidden-base protection mod — product and engineering specification
 
@@ -75,7 +79,7 @@ No claims or owner setup are required. Installing Blindstone on an existing worl
 
 Version 1 targets the Overworld only. Protection is defined by dimension ID and an inclusive minimum/exclusive maximum Y range.
 
-The default maximum is Y=64, aligned to a chunk-section boundary. This is a starting value for testing, not a universal safe preset. A base at or above the cutoff is outside protection. Surface openings below the cutoff must still reveal correctly.
+The default exclusive cap is Y=320. Below Y=64 all undiscovered cells remain concealed; above it, a cached geological exterior boundary distinguishes public mountain surface from private interior. Schema-1 default cap 64 migrates to 320; custom caps remain intentional limits. This foundation remains subject to the opening/terrain limitations in IMPLEMENTATION.md.
 
 Use world minimum height for the lower bound. Configuration must show the effective range in status output and reject invalid dimension/block identifiers or reversed bounds.
 
@@ -104,9 +108,9 @@ Use a chunk/session revision to reject work calculated before block changes, tel
 
 ### 5.4 Reveal rules
 
-All protected cells start concealed. There is no public-exterior or sky-column exception below the exclusive cutoff: air, water, glass, foliage, shafts and neighboring faces do not grant authorization from the surface. Above-cutoff terrain remains real. This intentionally trades low-valley/cave entrance appearance for protection against Y-layer scanners.
+All interior cells start concealed. Below Y=64 there is no public exterior exception. Above it, public exterior classification is independent of private exploration and does not flood into caves. Narrow shaft air below the closed boundary stays concealed. Low valleys and hidden cave interiors can appear filled until explored.
 
-Only accepted eyes below the cutoff start protected sight. Accepted body/vehicle cells and their fixed safety envelope remain immediate exceptions at the boundary. Sight jobs retain their immutable origin until movement of at least two blocks, body size change, intersecting geometry/chunk changes or lifecycle/configuration reset. Smaller movements receive immediate body safety, with sight refreshed at the documented rebase threshold. Completed stationary jobs do no repeat ray work. Knowledge is per viewer and accumulates only after publication.
+Only accepted eyes inside protected terrain start private sight. Accepted body/vehicle cells and their fixed safety envelope remain immediate exceptions at the boundary. Sight jobs retain their immutable origin until movement of at least two blocks, body size change, intersecting geometry/chunk changes or lifecycle/configuration reset. Smaller movements receive immediate body safety, with sight refreshed at the documented rebase threshold. Completed stationary jobs do no repeat ray work. Knowledge is per viewer and accumulates only after publication.
 
 Reveal decisions use the server-accepted player position and real server geometry. Never trust a client-reported camera location or freecam position.
 
@@ -198,7 +202,7 @@ See CONFIGURATION.md for the validated schema and numeric defaults.
 | Setting | Current behavior |
 | --- | --- |
 | Enabled dimensions | Overworld only initially; unsupported dimensions rejected if protection is requested. |
-| Protected Y range | World minimum through Y<64 as an initial test preset; always visible in status. |
+| Protected Y range | World minimum through Y<320 potential band; exterior boundary above Y=64 keeps public terrain real. |
 | Replacement terrain | Stone/deepslate by Y; only validated opaque full blocks. |
 | Air concealment | Enabled and required for the normal protection preset. |
 | Reveal range and refresh interval | Bounded, documented, benchmarked; actual values chosen through movement tests. |

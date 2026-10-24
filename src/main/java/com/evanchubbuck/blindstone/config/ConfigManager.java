@@ -48,8 +48,9 @@ public final class ConfigManager {
 
     private EffectiveConfig read(ServerLevel overworld) throws IOException {
         if (Files.size(file) > 65536) throw new IllegalArgumentException("Invalid Blindstone configuration: file exceeds 64 KiB");
-        return ConfigCodec.decode(Files.readString(file, StandardCharsets.UTF_8))
-                .forWorldBounds(overworld.getMinY(), overworld.getMinY() + overworld.getHeight());
+        var settings = ConfigCodec.decode(Files.readString(file, StandardCharsets.UTF_8));
+        settings.netherOre().resolve(); // Validate both worlds before any publication.
+        return settings.forWorldBounds(overworld.getMinY(), overworld.getMinY() + overworld.getHeight());
     }
 
     private void saveDefaultsAtomically() throws IOException {

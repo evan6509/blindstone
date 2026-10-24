@@ -196,7 +196,7 @@ public final class EntityPolicy {
     }
 
     private static boolean authorized(PacketFilter.Context context, BlockPos pos) {
-        return !context.policy().protects(pos.getY()) || context.isAuthorized(pos);
+        return !context.policy().protects(context.level(), pos) || context.isAuthorized(pos);
     }
 
     private static Set<EntityDataSerializer<?>> vanillaSerializers() {

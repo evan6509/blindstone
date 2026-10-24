@@ -1,3 +1,9 @@
+Current repair coverage: serialized broad openings and loaded chunk seams, exterior valley/cliff controls, exact-mask shared-light isolation, dark-edit geometry delivery followed by torch reconstruction, actual Nether block updates/light, and mandatory default-range timing/drain gates. See [repair evidence and limits](ACCEPTANCE_REPAIR.md). Historical checkpoint paragraphs below describe their original revisions.
+
+> Mountain foundation: all position-based authorization now shares the coordinate-aware geological boundary, including chunk palettes/counts/tags/heightmaps, updates, entities/events and reconstructed lighting. Public exterior stays separate from private masks. Full mountain packet, lighting and connection fixtures complement the older underground controls. Configurable ore targeting remains a later phase.
+
+Continuation coverage: targeted ore is filtered independently of mountain geometry through the existing interceptor. Overworld Y=160 serialization, exclusive ore height bounds, Nether debris/quartz/gold/gilded-blackstone serialization, ordered tag exclusions, and delivered two-viewer ore exposure/resend have regressions. Chunk palette rebuilding and matching filtered light remain shared with the mountain implementation. Nether connection/lifecycle coverage and comprehensive ore single/multi-block/bundle tests remain incomplete. See [unaccepted checkpoint](ORE_PERFORMANCE_CHECKPOINT.md).
+
 # Minecraft 26.3 private-alpha packet coverage
 
 The October 24 anti-base policy removes all public exterior authorization below the cutoff. Initial chunks, resends, updates, entities/events and light use only that viewer's delivered/publishing masks; surface eyes do not run protected sight. Actual-pipeline Y-layer/shaft/resend regressions and the existing path fixtures pass. See [current test evidence](TEST_REPORT.md) and [measured costs](PERFORMANCE.md).

@@ -47,6 +47,31 @@ import org.slf4j.LoggerFactory;
 /** Actual transformed send/defer/reconstruct/publish pipeline with decoded vanilla output. */
 public final class PlayableGameTests {
     @GameTest
+    public void oreExposureDeliversOnlyToNearbyDiscoveringViewer(GameTestHelper helper) throws Exception {
+        try (var settings = new Settings(helper, true); var terrain = new Terrain(helper.getLevel())) {
+            var ore = center(helper, 161);
+            for(int y=-1;y<=1;y++) for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++)
+                terrain.put(ore.offset(x,y,z), Blocks.STONE.defaultBlockState());
+            terrain.put(ore, Blocks.DIAMOND_ORE.defaultBlockState());
+            try(var explorer = new Viewer(helper,ore.offset(-4,-1,0)); var observer = new Viewer(helper,ore.atY(200))) {
+                var viewers = List.of(explorer, observer);
+                explorer.connection.send(explorer.source()); observer.connection.send(observer.source());
+                drive(helper,settings.runtime,viewers,()->!explorer.chunks().isEmpty()&&!observer.chunks().isEmpty(),"sealed-ore-initial");
+                helper.assertTrue(block(helper.getLevel(),explorer.chunks().getLast(),ore).is(Blocks.STONE),"Sealed ore must start hidden");
+                helper.assertTrue(block(helper.getLevel(),observer.chunks().getLast(),ore).is(Blocks.STONE),"Distant observer must start hidden");
+                terrain.put(ore.west(), Blocks.AIR.defaultBlockState());
+                drive(helper,settings.runtime,viewers,()->!explorer.chunks().isEmpty()
+                        &&block(helper.getLevel(),explorer.chunks().getLast(),ore).is(Blocks.DIAMOND_ORE),"ore-exposure");
+                observer.connection.send(observer.source());
+                int before = observer.chunks().size();
+                drive(helper,settings.runtime,viewers,()->observer.chunks().size()>before,"ore-observer-resend");
+                helper.assertTrue(block(helper.getLevel(),observer.chunks().getLast(),ore).is(Blocks.STONE),"Explorer must not reveal ore to distant observer");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest
     public void deterministicProductionBenchmark(GameTestHelper helper) throws Exception {
         var results = new ArrayList<Map<String, Object>>();
         try (var settings = new Settings(helper); var terrain = new Terrain(helper.getLevel())) {
@@ -98,6 +123,118 @@ public final class PlayableGameTests {
         helper.succeed();
     }
 
+    /** Isolated, settled edit gates; no repeating events can hide an undrained queue. */
+    @GameTest
+    public void matchedMountainOreQueueAcceptance(GameTestHelper helper) throws Exception {
+        matchedMountainOreQueueAcceptance(helper, false);
+    }
+
+    @GameTest
+    public void coldMountainOreQueueAcceptance(GameTestHelper helper) throws Exception {
+        matchedMountainOreQueueAcceptance(helper, true);
+    }
+
+    private void matchedMountainOreQueueAcceptance(GameTestHelper helper, boolean cold) throws Exception {
+        var results = new ArrayList<Map<String,Object>>();
+        boolean[] passed = {true};
+        try (var settings = new Settings(helper,true); var terrain = new Terrain(helper.getLevel())) {
+            for(int count:List.of(1,2,4,8)) {
+                var origin = center(helper,192).offset(cold ? 8192 + count * 1024 : 0,0,0);
+                var initial=new LinkedHashMap<String,Object>();
+                initial.put("cache_mode",cold?"cold":"warm-shared");initial.put("origin",origin.toShortString());
+                initial.put("event","initial");initial.put("viewers",count);initial.put("status","terrain-preparing");results.add(initial);
+                // Deterministic 3x3-chunk geological roof and broad interior, plus high ores.
+                if(cold || count==1) for(int y=191;y<=208;y++) for(int z=-20;z<=20;z++) for(int x=-20;x<=20;x++) {
+                    boolean room = y>=192&&y<=195&&Math.abs(x)<=15&&Math.abs(z)<=15;
+                    var block = room ? Blocks.AIR : (y==208?Blocks.GRASS_BLOCK:Blocks.STONE);
+                    if(y==196&&(x&3)==0&&(z&3)==0) block=Blocks.DIAMOND_ORE;
+                    terrain.put(origin.offset(x,y-192,z),block.defaultBlockState());
+                }
+                // Prepare incoming terrain outside runtime timing, like the original loaded-chunk fixture.
+                // Eight chunks of separation exceeds all terrain/light/snapshot neighborhoods.
+                var incoming = origin.offset(128,0,0);
+                if(cold || count==1) for(int y=191;y<=208;y++) for(int z=-20;z<=20;z++) for(int x=-20;x<=20;x++)
+                    terrain.put(incoming.offset(x,y-192,z),(y>=192&&y<=195&&Math.abs(x)<=15&&Math.abs(z)<=15
+                            ? Blocks.AIR : y==208?Blocks.GRASS_BLOCK:Blocks.STONE).defaultBlockState());
+                terrain.put(origin.offset(1,1,1),Blocks.AIR.defaultBlockState());
+                for(int x=0;x<4;x++) terrain.put(origin.offset(x,1,-1),Blocks.AIR.defaultBlockState());
+                terrain.put(origin.offset(0,3,0),Blocks.STONE.defaultBlockState());
+                terrain.put(origin.offset(0,16,0),Blocks.GRASS_BLOCK.defaultBlockState());
+                for(int y=4;y<=16;y++) terrain.put(origin.offset(1,y,0),(y==16?Blocks.GRASS_BLOCK:Blocks.STONE).defaultBlockState());
+                var viewers = new ArrayList<Viewer>();
+                initial.put("status","viewer-preparing");
+                try {
+                    long preparationStart=System.nanoTime();
+                    for(int n=0;n<count;n++) {
+                        var viewer=new Viewer(helper,origin); viewers.add(viewer);
+                        var cp=viewer.player.chunkPosition();
+                        for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++) {
+                            var chunk=helper.getLevel().getChunk(cp.x()+x,cp.z()+z);
+                            viewer.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
+                        }
+                    }
+                    long preparationNanos=System.nanoTime()-preparationStart;
+                    initial.put("event_ns",preparationNanos);
+                    if(count==8 && preparationNanos>=50_000_000) passed[0]=false;
+                    initial.putAll(settleBenchmark(helper,settings.runtime,viewers));initial.put("status","delivered");
+                    for(var viewer:viewers) helper.assertTrue(viewer.chunks().size()>=9 && settings.runtime.inspect(viewer.player).startsWith("Tracked chunks=9;"),"Initial workload must deliver and track nine chunks per viewer");
+                    if(cold && ((Number)initial.get("boundaryScans")).longValue()<9*256) passed[0]=false;
+                    if(cold) {
+                        var first=(Map<?,?>)initial.get("first_frame_work");
+                        if(((Number)first.get("boundaryScans")).longValue()<9*256
+                                || ((Number)first.get("boundaryCacheHits")).longValue()!=0) passed[0]=false;
+                    }
+                    if(cold && ((Number)initial.get("boundaryCellReads")).longValue()>((Number)initial.get("boundaryScans")).longValue()*32) passed[0]=false;
+                    if(((Number)initial.get("active_samples")).intValue()>200) passed[0]=false;
+                    if(count==8 && (((Number)initial.get("active_p95_ns")).longValue()>10_000_000
+                            || ((Number)initial.get("max_ns")).longValue()>=50_000_000)) passed[0]=false;
+                    for(String event:List.of("single-edit","ore-exposure","four-cell-burst","roof","shaft","movement","resend","stream")) {
+                        var row=new LinkedHashMap<String,Object>();
+                        row.put("cache_mode",cold?"cold":"warm-shared");row.put("event",event);row.put("viewers",count);
+                        row.put("status","preparing");results.add(row);
+                        long start=System.nanoTime();
+                        if(event.equals("single-edit")) terrain.put(origin.offset(1,1,1),Blocks.STONE.defaultBlockState());
+                        if(event.equals("ore-exposure")) terrain.put(origin.offset(0,3,0),Blocks.AIR.defaultBlockState());
+                        if(event.equals("four-cell-burst")) for(int x=0;x<4;x++) terrain.put(origin.offset(x,1,-1),Blocks.STONE.defaultBlockState());
+                        if(event.equals("roof")) terrain.put(origin.offset(0,16,0),Blocks.AIR.defaultBlockState());
+                        if(event.equals("shaft")) for(int y=4;y<=16;y++) terrain.put(origin.offset(1,y,0),Blocks.AIR.defaultBlockState());
+                        if(event.equals("movement")) for(var viewer:viewers) viewer.player.setPos(origin.getX()+3.5,origin.getY(),origin.getZ()+0.5);
+                        if(event.equals("stream")) for(var viewer:viewers) {
+                            var cp=viewer.player.chunkPosition();
+
+                            for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++)
+                                viewer.connection.send(new net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket(new ChunkPos(cp.x()+x,cp.z()+z)));
+                            viewer.player.setPos(incoming.getX()+0.5,incoming.getY(),incoming.getZ()+0.5);
+                            // Same lifecycle reset as an accepted teleport; never forge a 128-block body sweep.
+                            settings.runtime.reset(viewer.player);
+                            for(int z=-1;z<=1;z++) for(int x=-1;x<=1;x++) {
+                                var chunk=helper.getLevel().getChunk(cp.x()+x+8,cp.z()+z);
+                                viewer.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
+                            }
+                        }
+                        if(event.equals("resend")) for(var viewer:viewers) viewer.connection.send(viewer.source());
+                        long eventNanos=System.nanoTime()-start;
+                        row.put("event_ns",eventNanos);row.put("status","settling");
+                        try { row.putAll(settleBenchmark(helper,settings.runtime,viewers));row.put("status","delivered"); }
+                        catch(RuntimeException | Error failure) {row.put("status","failed");row.put("failure",failure.toString());throw failure;}
+                        for(var viewer:viewers) helper.assertTrue(settings.runtime.inspect(viewer.player).startsWith("Tracked chunks=9;"),"Event workload must keep nine tracked chunks per viewer");
+                        row.put("cache_mode",cold?"cold":"warm-shared");row.put("event",event);row.put("viewers",count);row.put("event_ns",eventNanos);
+                        int drain=((Number)row.get("samples")).intValue()-16;
+                        row.put("drain_refreshes",drain);
+                        if(cold && event.equals("stream") && ((Number)row.get("boundaryScans")).longValue()<9*256) passed[0]=false;
+                        if(event.equals("single-edit") && drain>20 || List.of("four-cell-burst","ore-exposure","roof","shaft").contains(event) && drain>40) passed[0]=false;
+                        if(count==8 && (((Number)row.get("active_p95_ns")).longValue()>10_000_000
+                                ||((Number)row.get("max_ns")).longValue()>=50_000_000 || eventNanos>=50_000_000)) passed[0]=false;
+                    }
+                } finally {for(var viewer:viewers)viewer.close();}
+            }
+        } finally {
+            Files.writeString(Path.of(cold?"mountain-ore-cold-acceptance.json":"mountain-ore-acceptance.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(results));
+        }
+        helper.assertTrue(passed[0],"Mountain/ore cold="+cold+" frame, scan or 20/40-refresh drain gate failed; inspect workload JSON");
+        helper.succeed();
+    }
+
     /** Default configuration, repeated accepted rebases and nine real tracked chunks per viewer. */
     @GameTest
     public void defaultRangeProductionBenchmark(GameTestHelper helper) throws Exception {
@@ -124,6 +261,7 @@ public final class PlayableGameTests {
                     for(var v:viewers)helper.assertTrue(v.chunks().size()>=9 && v.connection.isConnected(),"Nine tracked chunks must settle");
                     for(String event:List.of("static","movement","edit","burst","stream")) {
                         var active=new ArrayList<Long>();var settling=new ArrayList<Long>();
+                        var mutations=new ArrayList<Long>();var refreshes=new ArrayList<Long>();
                         var activeCounts=new LinkedHashMap<String,Long>();var settlingCounts=new LinkedHashMap<String,Long>();
                         for(int cycle=0;cycle<32;cycle++) {
                             for(int phase=0;phase<5;phase++) {
@@ -144,8 +282,10 @@ public final class PlayableGameTests {
                                         v.connection.send(new ClientboundLevelChunkWithLightPacket(chunk,helper.getLevel().getLightEngine(),null,null));
                                     }
                                 }
+                                long refreshStart=System.nanoTime();
                                 benchmarkTick(helper,settings.runtime,viewers);
                                 long elapsed=System.nanoTime()-start;
+                                if(phase==0) {mutations.add(refreshStart-start);refreshes.add(System.nanoTime()-refreshStart);}
                                 var counts=phase==0?activeCounts:settlingCounts;
                                 com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot().forEach((key,value)->counts.merge(key,((Number)value).longValue(),Long::sum));
                                 counts.merge("packets",(long)viewers.stream().mapToInt(v->v.history.size()).sum()-before,Long::sum);
@@ -160,6 +300,11 @@ public final class PlayableGameTests {
                             row.put("underground",underground);row.put("viewers",count);row.put("event",event);row.put("eventFrame",eventFrame);row.put("samples",times.length);
                             row.putAll(eventFrame?activeCounts:settlingCounts);
                             for(int percentile:List.of(50,95,99))row.put("p"+percentile+"_ns",times[(int)Math.ceil(times.length*percentile/100.0)-1]);
+                            if(eventFrame) {
+                                var edits=mutations.stream().mapToLong(Long::longValue).sorted().toArray();
+                                var updates=refreshes.stream().mapToLong(Long::longValue).sorted().toArray();
+                                row.put("event_path_p95_ns",edits[30]);row.put("refresh_p95_ns",updates[30]);
+                            }
                             row.put("max_ns",times[times.length-1]);results.add(row);
                         }
                         var tail=new LinkedHashMap<String,Object>(settleBenchmark(helper,settings.runtime,viewers));
@@ -181,11 +326,18 @@ public final class PlayableGameTests {
             helper.assertTrue(captures==32L*count,"Every three-block movement must actually trigger a sight rebase for every viewer");
         }
 
+        for(var row:results) if(row.get("viewers").equals(8)) {
+            helper.assertTrue(((Number)row.get("p95_ns")).longValue()<=10_000_000
+                    && ((Number)row.get("max_ns")).longValue()<50_000_000,
+                    "Default-range eight-viewer timing acceptance failed: "+row.get("event"));
+            if(row.get("event").equals("edit-tail")) helper.assertTrue(((Number)row.get("samples")).intValue()-16<=20,"Default edit tail must drain within twenty refreshes");
+            if(row.get("event").equals("burst-tail")) helper.assertTrue(((Number)row.get("samples")).intValue()-16<=40,"Default burst tail must drain within forty refreshes");
+        }
         helper.succeed();
     }
 
     private static Map<String,Object> settleBenchmark(GameTestHelper helper, BlindstoneRuntime runtime,List<Viewer> viewers) {
-        var times=new ArrayList<Long>();var counts=new LinkedHashMap<String,Long>();
+        var times=new ArrayList<Long>();var frames=new ArrayList<Map<String,Long>>();var counts=new LinkedHashMap<String,Long>();
         try {
             com.evanchubbuck.blindstone.diagnostics.WorkMetrics.enabled=true;
             int idle=0;
@@ -194,16 +346,25 @@ public final class PlayableGameTests {
                 int before=viewers.stream().mapToInt(v->v.history.size()).sum();
                 long start=System.nanoTime();benchmarkTick(helper,runtime,viewers);times.add(System.nanoTime()-start);
                 var snapshot=com.evanchubbuck.blindstone.diagnostics.WorkMetrics.snapshot();
+                frames.add(new LinkedHashMap<>(snapshot));
                 snapshot.forEach((key,value)->counts.merge(key,value,Long::sum));
                 long packets=viewers.stream().mapToInt(v->v.history.size()).sum()-before;counts.merge("packets",packets,Long::sum);
-                boolean quiet=packets==0&&snapshot.values().stream().allMatch(n->n==0);
+                boolean quiet=packets==0&&snapshot.entrySet().stream().allMatch(e->e.getKey().equals("boundaryCacheHits")||e.getValue()==0);
                 idle=quiet?idle+1:0;
                 for(var v:viewers)helper.assertTrue(v.connection.isConnected(),"Settling viewers must remain connected");
                 if(idle==16) {
                     var sorted=times.stream().mapToLong(Long::longValue).sorted().toArray();
                     var result=new LinkedHashMap<String,Object>();result.putAll(counts);result.put("samples",sorted.length);
                     for(int percentile:List.of(50,95,99))result.put("p"+percentile+"_ns",sorted[(int)Math.ceil(sorted.length*percentile/100.0)-1]);
-                    result.put("max_ns",sorted[sorted.length-1]);return result;
+                    var active=times.subList(0,Math.max(1,times.size()-16)).stream().mapToLong(Long::longValue).sorted().toArray();
+                    result.put("active_samples",active.length);
+                    for(int percentile:List.of(50,95,99)) result.put("active_p"+percentile+"_ns",active[(int)Math.ceil(active.length*percentile/100.0)-1]);
+                    result.put("max_ns",sorted[sorted.length-1]);
+                    int peak=times.indexOf(sorted[sorted.length-1]);
+                    result.put("frame_times_ns",List.copyOf(times));
+                    result.put("first_frame_work",frames.getFirst());
+                    result.put("max_frame_index",peak);result.put("max_frame_work",frames.get(peak));
+                    return result;
                 }
             }
             throw new IllegalStateException("Benchmark failed to settle within 20000 refreshes");
@@ -212,6 +373,28 @@ public final class PlayableGameTests {
 
     private static void benchmarkTick(GameTestHelper helper, BlindstoneRuntime runtime,List<Viewer> viewers) {
         runtime.beginTick();runtime.refresh(helper.getLevel());for(var v:viewers)v.pump();
+    }
+
+    @GameTest
+    public void darkLocalEditReusesLightButNewTorchReconstructsIt(GameTestHelper helper) throws Exception {
+        try(var settings=new Settings(helper,true);var terrain=new Terrain(helper.getLevel())) {
+            var room=room(helper,terrain);
+            terrain.put(room.torch(),Blocks.AIR.defaultBlockState());
+            var edit=room.inside().offset(1,1,1);
+            try(var viewer=new Viewer(helper,room.inside())) {
+                viewer.connection.send(viewer.source());settleBenchmark(helper,settings.runtime,List.of(viewer));
+                viewer.history.clear();
+                terrain.put(edit,Blocks.STONE.defaultBlockState());
+                var dark=settleBenchmark(helper,settings.runtime,List.of(viewer));
+                helper.assertTrue(((Number)dark.get("lightJobs")).longValue()==0,"Settled dark edit must not rebuild any light halo");
+                helper.assertTrue(viewer.chunks().stream().anyMatch(packet->block(helper.getLevel(),packet,edit).is(Blocks.STONE)),"Dark shortcut still delivers actual changed geometry");
+                viewer.history.clear();terrain.put(edit,Blocks.TORCH.defaultBlockState());
+                var lit=settleBenchmark(helper,settings.runtime,List.of(viewer));
+                helper.assertTrue(((Number)lit.get("lightJobs")).longValue()>0,"An emitter must reject the dark proof");
+                helper.assertTrue(viewer.chunks().stream().anyMatch(packet->light(helper.getLevel(),packet.lightData(),edit,false)==14),"New authorized emission reaches the client");
+            }
+        }
+        helper.succeed();
     }
 
     @GameTest
@@ -372,6 +555,46 @@ public final class PlayableGameTests {
                 helper.assertTrue(helper.getLevel().getBlockState(room.chest()).is(Blocks.CHEST)
                                 && helper.getLevel().getBlockEntity(room.chest()) != null,
                         "Outgoing reconstruction must leave the real chest and block entity intact");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void mountainInteriorDiscoveryAndUpdatesRemainPrivateToEachConnection(GameTestHelper helper) throws Exception {
+        try (var settings = new Settings(helper); var terrain = new Terrain(helper.getLevel())) {
+            var center = center(helper, 192);
+            for (int y = 191; y <= 208; y++) for (int z = -8; z < 8; z++) for (int x = -8; x < 8; x++) {
+                boolean room = y >= 192 && y <= 194 && Math.abs(x) <= 2 && Math.abs(z) <= 2;
+                terrain.put(center.offset(x, y - 192, z),
+                        (room ? Blocks.AIR : y == 208 ? Blocks.GRASS_BLOCK : Blocks.STONE).defaultBlockState());
+            }
+            var chest = center.offset(0, 1, -1);
+            var torch = center.offset(1, 1, 0);
+            terrain.put(chest, Blocks.CHEST.defaultBlockState());
+            terrain.put(torch.below(), Blocks.STONE.defaultBlockState());
+            terrain.put(torch, Blocks.TORCH.defaultBlockState());
+            try (var outside = new Viewer(helper, center.atY(210)); var inside = new Viewer(helper, center)) {
+                outside.connection.send(outside.source()); inside.connection.send(inside.source());
+                drive(helper, settings.runtime, List.of(outside, inside), () -> !outside.chunks().isEmpty()
+                        && inside.chunks().stream().anyMatch(packet -> block(helper.getLevel(), packet, chest).is(Blocks.CHEST)
+                        && tags(packet).contains(chest) && light(helper.getLevel(), packet.lightData(), torch, false) > 0),
+                        "mountain-private-exploration");
+                outside.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(chest, Blocks.CHEST.defaultBlockState()));
+                outside.pump();
+                helper.assertTrue(outside.history.stream().anyMatch(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket.class::isInstance),
+                        "Update must reach the connection fixture");
+                helper.assertTrue(outside.history.stream().filter(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket.class::isInstance)
+                        .map(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket.class::cast)
+                        .allMatch(packet -> packet.getBlockState().is(Blocks.STONE)), "Later mountain storage update stays hidden");
+                for (var packet : outside.chunks()) {
+                    helper.assertTrue(block(helper.getLevel(), packet, center).is(Blocks.STONE)
+                            && block(helper.getLevel(), packet, chest).is(Blocks.STONE) && !tags(packet).contains(chest)
+                            && light(helper.getLevel(), packet.lightData(), torch, false) == 0,
+                            "Surface connection never inherits interior discovery or lighting");
+                    helper.assertTrue(block(helper.getLevel(), packet, center.atY(208)).is(Blocks.GRASS_BLOCK)
+                            && block(helper.getLevel(), packet, center.atY(209)).isAir(), "Mountain exterior remains real");
+                }
             }
         }
         helper.succeed();

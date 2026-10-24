@@ -42,7 +42,7 @@ def verify(directory="build/libs", version=None, commit=None):
             bytecode = archive.read(mixins["package"].replace(".", "/") + "/" + hook + ".class")
             require(int.from_bytes(bytecode[6:8], "big") == 69, f"Missing Java 25 mixin: {hook}")
         prefix = "com/evanchubbuck/blindstone/"
-        for name in ["BlindstoneMod", "ChunkFilter", "ConcealmentPolicy", "SectionVisibility", "ViewerState", "mixin/PlayerListMixin",
+        for name in ["BlindstoneMod", "ChunkFilter", "ConcealmentPolicy", "TerrainBoundary", "OrePolicy", "SectionVisibility", "ViewerState", "mixin/PlayerListMixin",
                      "mixin/ConnectionMixin", "mixin/ChunkMapMixin", "mixin/TrackedEntityMixin", "mixin/LevelChunkMixin",
                      "runtime/BlindstoneRuntime", "network/PacketFilter", "visibility/GeometrySnapshot", "visibility/VisibilityEvaluator",
                      "config/ConfigManager", "config/BlindstoneConfig", "diagnostics/BlindstoneDiagnostics", "HookReadiness",

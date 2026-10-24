@@ -22,9 +22,15 @@ public final class ConfigCodec {
         if (json.length() > 65536) throw invalid("Configuration exceeds 64 KiB");
         try (var reader = new JsonReader(new StringReader(json))) {
             reader.setStrictness(Strictness.STRICT);
-            JsonObject root = object(read(reader, 0), Set.of("schemaVersion", "dimensions", "protectedMaxY", "concealAir",
+            JsonElement parsed = read(reader, 0);
+            boolean hasOre = parsed instanceof JsonObject o && o.has("ore");
+            var fields = new java.util.HashSet<>(Set.of("schemaVersion", "dimensions", "protectedMaxY", "concealAir",
                     "protectNonPlayerEntities", "soundPolicy", "replacements", "revealRangeBlocks", "refreshIntervalTicks",
                     "movementSafetyRadiusBlocks", "budgets"));
+            if (hasOre) fields.add("ore");
+            boolean hasNetherOre = parsed instanceof JsonObject o && o.has("netherOre");
+            if (hasNetherOre) fields.add("netherOre");
+            JsonObject root = object(parsed, fields);
             if (reader.peek() != JsonToken.END_DOCUMENT) throw invalid("Trailing data");
             var dimensions = new ArrayList<String>();
             if (!(root.get("dimensions") instanceof JsonArray array)) throw invalid("dimensions must be an array");
@@ -33,7 +39,10 @@ public final class ConfigCodec {
             var budget = object(root.get("budgets"), Set.of("maxViewers", "maxTrackedChunksPerViewer", "maxGlobalTrackedChunks",
                     "maxQueuedChunksPerViewer", "maxGlobalQueuedChunks", "maxSnapshotBlocksPerJob", "maxGeometryChecksPerTickPerViewer",
                     "maxGeometryChecksPerTickGlobal", "maxWorkNanosPerTick", "maxMaskBytes", "movementDeliveryDeadlineTicks"));
-            return new BlindstoneConfig(integer(root, "schemaVersion"), dimensions, integer(root, "protectedMaxY"),
+            int version = integer(root, "schemaVersion");
+            int cap = integer(root, "protectedMaxY");
+            if (version == 1) { version = 2; if (cap == 64) cap = 320; }
+            return new BlindstoneConfig(version, dimensions, cap,
                     bool(root, "concealAir"), bool(root, "protectNonPlayerEntities"), string(root.get("soundPolicy")),
                     new BlindstoneConfig.Replacements(string(replacements.get("aboveZero")), string(replacements.get("belowZero"))),
                     integer(root, "revealRangeBlocks"), integer(root, "refreshIntervalTicks"), decimal(root, "movementSafetyRadiusBlocks"),
@@ -41,10 +50,21 @@ public final class ConfigCodec {
                             integer(budget, "maxGlobalTrackedChunks"), integer(budget, "maxQueuedChunksPerViewer"), integer(budget, "maxGlobalQueuedChunks"),
                             integer(budget, "maxSnapshotBlocksPerJob"), integer(budget, "maxGeometryChecksPerTickPerViewer"),
                             integer(budget, "maxGeometryChecksPerTickGlobal"), number(budget, "maxWorkNanosPerTick").longValueExact(),
-                            number(budget, "maxMaskBytes").longValueExact(), integer(budget, "movementDeliveryDeadlineTicks")));
+                            number(budget, "maxMaskBytes").longValueExact(), integer(budget, "movementDeliveryDeadlineTicks")),
+                    hasOre ? ore(root.get("ore")) : BlindstoneConfig.Ore.defaults(),
+                    hasNetherOre ? ore(root.get("netherOre")) : BlindstoneConfig.Ore.netherDefaults());
         } catch (IOException | ArithmeticException failure) {
             throw invalid("Malformed JSON or numeric value");
         }
+    }
+
+    private static BlindstoneConfig.Ore ore(JsonElement value) {
+        var object = object(value, Set.of("enabled", "maxBlockHeight", "updateRadius", "targets"));
+        if (!(object.get("targets") instanceof JsonArray array)) throw invalid("ore.targets must be an array");
+        var targets = new ArrayList<String>();
+        for (var rule : array) targets.add(string(rule));
+        return new BlindstoneConfig.Ore(bool(object, "enabled"), integer(object, "maxBlockHeight"),
+                integer(object, "updateRadius"), targets);
     }
 
     public static String encode(BlindstoneConfig config) {
@@ -69,7 +89,7 @@ public final class ConfigCodec {
                 JsonArray result = new JsonArray();
                 reader.beginArray();
                 while (reader.hasNext()) {
-                    if (result.size() >= 16) throw invalid("Configuration array exceeds schema");
+                    if (result.size() >= 64) throw invalid("Configuration array exceeds schema");
                     result.add(read(reader, depth + 1));
                 }
                 reader.endArray();

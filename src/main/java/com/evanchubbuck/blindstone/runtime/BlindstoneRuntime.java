@@ -54,6 +54,7 @@ public final class BlindstoneRuntime {
     private boolean publishing;
     private long tick;
     private long workSpentNanos;
+    private long packetWorkNanos;
     private int rayWorkRemaining;
     private int nextViewer;
 
@@ -83,7 +84,8 @@ public final class BlindstoneRuntime {
     public boolean admitsPlayers() { return !enabled||!failed; }
     public boolean enabled() { return enabled; }
     private void checkThread() { if(!server.isSameThread()) throw new IllegalStateException("Blindstone requires the owning server thread"); }
-    private boolean protectedWorld(ServerPlayer player) { return enabled&&player.level().dimension().equals(Level.OVERWORLD); }
+    private boolean protectedWorld(ServerPlayer player) { return enabled && supportedWorld(player.level()); }
+    private boolean supportedWorld(ServerLevel level) { return level.dimension().equals(Level.OVERWORLD) || level.dimension().equals(Level.NETHER); }
     private Connection connection(ServerPlayer p) {
         return ((com.evanchubbuck.blindstone.mixin.ServerCommonListenerAccess)p.connection).blindstone$connection();
     }
@@ -110,6 +112,12 @@ public final class BlindstoneRuntime {
 
     /** Returns true when the runtime owns deferred completion/publication of this frame. */
     public boolean intercept(ServerPlayer player,Packet<?> packet,ChannelFutureListener callback,boolean flush) {
+        if(publishing) return interceptOwned(player,packet,callback,flush);
+        long started=System.nanoTime();
+        try {return interceptOwned(player,packet,callback,flush);}
+        finally {packetWorkNanos+=System.nanoTime()-started;}
+    }
+    private boolean interceptOwned(ServerPlayer player,Packet<?> packet,ChannelFutureListener callback,boolean flush) {
         checkThread();
         if(!protectedWorld(player)) { remove(player); return false; }
         if(failed) throw new IllegalStateException("Blindstone is unavailable");
@@ -142,7 +150,7 @@ public final class BlindstoneRuntime {
         if(packet instanceof ClientboundLightUpdatePacket update) {
             // Engine light below the safe public boundary is never copied. Authorized geometry changes
             // already invalidate filtered light; only safe upper-boundary engine changes add work here.
-            int firstSafe=(configuration.current().policy().maxY()+16-s.level.getMinY())/16+1;
+            int firstSafe=(s.policy.exteriorMinY()+16-s.level.getMinY())/16+1;
             var data=update.lightData();
             if(data.skyYMask().nextSetBit(firstSafe)>=0||data.blockYMask().nextSetBit(firstSafe)>=0
                     ||data.emptySkyYMask().nextSetBit(firstSafe)>=0||data.emptyBlockYMask().nextSetBit(firstSafe)>=0)
@@ -201,7 +209,11 @@ public final class BlindstoneRuntime {
             if(safe==null) diagnostics.increment(BlindstoneDiagnostics.Counter.DROPPED_PACKETS);
             else if(safe!=packet) diagnostics.increment(BlindstoneDiagnostics.Counter.FILTERED_PACKETS);
             return safe;
-        } finally { diagnostics.timing(BlindstoneDiagnostics.Timing.PACKET_FILTER,System.nanoTime()-start); }
+        } finally {
+            long cost=System.nanoTime()-start;
+            diagnostics.timing(BlindstoneDiagnostics.Timing.PACKET_FILTER,cost);
+            if(!publishing) packetWorkNanos+=cost;
+        }
     }
     private void track(Session s,long key) {
         if(s.state.phase(key)!=ViewerState.Phase.UNTRACKED) return;
@@ -223,7 +235,7 @@ public final class BlindstoneRuntime {
         s.pending.put(key,new Pending(key,target,++s.generation,tick));
     }
     private void forget(Session s,long key) {
-        s.state.untrack(key);s.clientChunks.remove(key);s.pending.remove(key);s.desired.remove(key);
+        s.state.untrack(key);s.lightContexts.remove(key);s.clientChunks.remove(key);s.pending.remove(key);s.desired.remove(key);
         if(s.lights!=null) s.lights.forget(ChunkPos.unpack(key));
         s.job=null;s.dirty=true;s.safetyResult=null;s.lastCollectedSafety=null;
     }
@@ -240,7 +252,8 @@ public final class BlindstoneRuntime {
     }
     public void refresh(ServerLevel level) {
         checkThread();
-        if(!enabled||failed||!level.dimension().equals(Level.OVERWORLD)||publishing) return;
+        if(!enabled||failed||!supportedWorld(level)||publishing) return;
+        workSpentNanos+=packetWorkNanos;packetWorkNanos=0;
         var sessions=new ArrayList<>(viewers.values());
         if(sessions.isEmpty()) return;
         int start=Math.floorMod(nextViewer++,sessions.size());
@@ -299,14 +312,14 @@ public final class BlindstoneRuntime {
         if(input.equals(s.cachedSafetyInput)&&s.safetyResult!=null) return s.safetyResult;
         int bound=VisibilityEvaluator.safetySnapshotBlockBound(input);
         if(bound>8192) throw new IllegalStateException("Accepted movement safety exceeds the explicit 16-block/body budget");
-        if(input.bodies().stream().allMatch(path->path.body().minY-VisibilityEvaluator.SAFETY_MARGIN>=configuration.current().policy().maxY()
-                &&(path.previousBody()==null||path.previousBody().minY-VisibilityEvaluator.SAFETY_MARGIN>=configuration.current().policy().maxY()))) {
+        if(input.bodies().stream().allMatch(path->path.body().minY-VisibilityEvaluator.SAFETY_MARGIN>=s.policy.maxY()
+                &&(path.previousBody()==null||path.previousBody().minY-VisibilityEvaluator.SAFETY_MARGIN>=s.policy.maxY()))) {
             s.cachedSafetyInput=input;
             return s.safetyResult=new VisibilityEvaluator.Result(Map.of(),true,true,0,0,0,0);
         }
         var snapshot=VisibilityEvaluator.captureSafety(s.level,input,8192);
         s.cachedSafetyInput=input;
-        s.safetyResult=VisibilityEvaluator.evaluateSafety(snapshot,input,configuration.current().policy());
+        s.safetyResult=VisibilityEvaluator.evaluateSafety(snapshot,input,s.policy);
         return s.safetyResult;
     }
     private void publishSafety(Session s,long key,Map<Integer,SectionVisibility> masks) {
@@ -330,10 +343,17 @@ public final class BlindstoneRuntime {
     }
     private void refreshSight(Session s) {
         var config=configuration.current();var settings=config.settings();
-        // Surface eyes never authorize protected geometry, including clear shafts below the cutoff.
-        if(s.player.getEyeY()>=config.policy().maxY()) {
+        // Exterior sight can discover ores only; it cannot publish connected room geometry.
+        boolean exteriorEyes = !s.policy.protects(s.level, BlockPos.containing(s.player.getEyePosition()));
+        if(exteriorEyes && s.policy.ores().targets().isEmpty()) {
             s.job=null;s.lastRefresh=tick;s.dirty=false;return;
         }
+        var eyes=s.player.getEyePosition();
+        if(exteriorEyes && s.exteriorEmpty && !s.dirty && s.jobOrigin.distanceToSqr(eyes)<4) return;
+        if(exteriorEyes && (s.job==null || s.jobOrigin.distanceToSqr(eyes)>=4 || s.dirty) && !hasOreWithinView(s)) {
+            s.job=null;s.jobOrigin=eyes;s.exteriorEmpty=true;s.lastRefresh=tick;s.dirty=false;return;
+        }
+        s.exteriorEmpty=false;
         if(tick-s.lastRefresh<settings.refreshIntervalTicks()&&!s.dirty) return;
         long start=System.nanoTime();
         try {
@@ -351,7 +371,10 @@ public final class BlindstoneRuntime {
                     long key=ChunkPos.pack(x,z);
                     known.put(key,s.state.deliveredSections(key));
                 }
-                s.job=VisibilityEvaluator.createJob(geometry,view,config.policy(),settings.revealRangeBlocks(),known);
+                s.job=exteriorEyes?VisibilityEvaluator.createJob(geometry,view,s.policy,settings.revealRangeBlocks(),known,pos->{
+                    var chunk=s.level.getChunkSource().getChunkNow(pos.getX()>>4,pos.getZ()>>4);
+                    return chunk!=null && s.policy.ores().hides(chunk.getBlockState(pos),pos.getY());
+                }):VisibilityEvaluator.createJob(geometry,view,s.policy,settings.revealRangeBlocks(),known);
                 s.jobOrigin=view.eyes();s.jobBody=view.body();
             }
             int remaining=Math.min(rayWorkRemaining,settings.budgets().maxGeometryChecksPerTickPerViewer()-s.rayWorkUsed);
@@ -360,14 +383,43 @@ public final class BlindstoneRuntime {
                 rayWorkRemaining-=sight.rayWork();s.rayWorkUsed+=sight.rayWork();
                 sight.chunks().forEach((key,masks)->{
                     if(s.state.phase(key)!=ViewerState.Phase.UNTRACKED) {
-                        if(masks.isEmpty())return;
-                        s.desired.merge(key,masks,BlindstoneRuntime::union);
-                        if(addsKnowledge(s.state,key,masks)) queueChunk(s,key);
+                        var allowed = exteriorEyes ? oreMasks(s, key, masks) : masks;
+                        if(allowed.isEmpty())return;
+                        s.desired.merge(key,allowed,BlindstoneRuntime::union);
+                        if(addsKnowledge(s.state,key,allowed)) queueChunk(s,key);
                     }
                 });
             }
             s.lastRefresh=tick;s.dirty=!s.job.done();
         } finally {long cost=System.nanoTime()-start;workSpentNanos+=cost;diagnostics.timing(BlindstoneDiagnostics.Timing.GEOMETRY,cost);}
+    }
+    private boolean hasOreWithinView(Session s) {
+        int range=configuration.current().settings().revealRangeBlocks();
+        var eye=BlockPos.containing(s.player.getEyePosition());
+        for(int z=(eye.getZ()-range)>>4;z<=(eye.getZ()+range)>>4;z++) for(int x=(eye.getX()-range)>>4;x<=(eye.getX()+range)>>4;x++) {
+            var chunk=s.level.getChunkSource().getChunkNow(x,z);
+            if(chunk==null) continue;
+            int low=Math.max(chunk.getMinSectionY(),(eye.getY()-range)>>4);
+            int high=Math.min(chunk.getMinSectionY()+chunk.getSections().length-1,(eye.getY()+range)>>4);
+            for(int y=low;y<=high;y++) if(s.policy.ores().mayHide(chunk.getSections()[y-chunk.getMinSectionY()],y*16)) return true;
+        }
+        return false;
+    }
+
+    private Map<Integer,SectionVisibility> oreMasks(Session s,long key,Map<Integer,SectionVisibility> masks) {
+        var chunk = s.level.getChunkSource().getChunkNow(ChunkPos.getX(key),ChunkPos.getZ(key));
+        if(chunk == null) return Map.of();
+        var result = new HashMap<Integer,SectionVisibility>();
+        masks.forEach((sectionY, mask) -> {
+            var bits = new java.util.BitSet();
+            var section = chunk.getSection(chunk.getSectionIndex(sectionY * 16));
+            for(int index=mask.nextRevealedIndex(0); index>=0; index=mask.nextRevealedIndex(index+1)) {
+                int x=index&15,z=(index>>4)&15,y=index>>8;
+                if(s.policy.ores().hides(section.getBlockState(x,y,z),sectionY*16+y)) bits.set(index);
+            }
+            if(!bits.isEmpty()) result.put(sectionY,SectionVisibility.from(bits));
+        });
+        return result;
     }
     private void prepareLighting(Session s) {
         long start=System.nanoTime();
@@ -375,7 +427,7 @@ public final class BlindstoneRuntime {
         priorities.sort(Comparator.comparingInt(p->ChunkPos.unpack(p.key).distanceSquared(s.player.chunkPosition())));
         int requested=0;
         for(var pending:priorities) {
-            if(pending.prepared!=null) continue;
+            if(pending.prepared!=null || pending.preservedLight!=null) continue;
             if(!hasWorkBudget(start)) break;
             var context=frozen(s,pending);
             if(!s.lights.request(ChunkPos.unpack(pending.key),context,pending.generation)) break;
@@ -385,13 +437,14 @@ public final class BlindstoneRuntime {
         s.lights.step(2_000_000,Math.min(left,5_000_000));
         for(var pending:priorities) {
             if(pending.prepared!=null||!hasWorkBudget(start)) continue;
-            var light=s.lights.getReady(ChunkPos.unpack(pending.key),pending.generation);
+            var light=pending.preservedLight!=null?pending.preservedLight:s.lights.getReady(ChunkPos.unpack(pending.key),pending.generation);
             if(light==null) continue;
             var chunk=s.level.getChunkSource().getChunkNow(ChunkPos.getX(pending.key),ChunkPos.getZ(pending.key));
             if(chunk==null) {forget(s,pending.key);continue;}
+            frozen(s,pending);
             var masks=union(pending.masks,s.state.deliveredSections(pending.key));
             pending.prepared=new ClientboundLevelChunkWithLightPacket(ChunkPos.getX(pending.key),ChunkPos.getZ(pending.key),
-                    ChunkFilter.snapshot(chunk,configuration.current().policy(),masks),light);
+                    ChunkFilter.snapshotCached(chunk,s.policy,masks),light);
             pending.publishedMasks=masks;
             pending.preparedTick=tick;
         }
@@ -403,13 +456,15 @@ public final class BlindstoneRuntime {
         var center=ChunkPos.unpack(pending.key);
         for(int z=center.z()-1;z<=center.z()+1;z++) for(int x=center.x()-1;x<=center.x()+1;x++) {
             long key=ChunkPos.pack(x,z);
-            masks.put(key,key==pending.key?pending.masks:s.state.deliveredSections(key));
+            masks.put(key,key==pending.key?pending.masks:union(s.state.deliveredSections(key),s.desired.getOrDefault(key,Map.of())));
         }
-        pending.context=new FrozenContext(s.level,configuration.current().policy(),Map.copyOf(masks));
+        pending.context=new FrozenContext(s.level,s.policy,Map.copyOf(masks));
         return pending.context;
     }
     private void publishReady(Session s) {
-        while(!s.batches.isEmpty()) {
+        long started=System.nanoTime();
+        try {
+        while(!s.batches.isEmpty() && hasWorkBudget(started)) {
             var batch=s.batches.peek();
             if(!ready(s,batch)) break;
             sendBatch(s,batch);s.batches.remove();
@@ -417,9 +472,10 @@ public final class BlindstoneRuntime {
         // Coalesced resends update heightmaps, blocks, block entities and light in one vanilla packet.
         Set<Long> held=new HashSet<>();
         for(var batch:s.batches) for(var frame:batch.frames) held.addAll(collectChunkKeys(frame.packet));
-        for(var p:List.copyOf(s.pending.values())) if(p.prepared!=null&&!held.contains(p.key)&&s.clientChunks.contains(p.key)) {
+        for(var p:List.copyOf(s.pending.values())) if(hasWorkBudget(started)&&p.prepared!=null&&!held.contains(p.key)&&s.clientChunks.contains(p.key)) {
             sendPreparedChunk(s,p,null,true);finishChunk(s,p);
         }
+        } finally {workSpentNanos+=System.nanoTime()-started;}
     }
     private boolean ready(Session s,Batch batch) {
         for(var frame:batch.frames) for(long key:collectChunkKeys(frame.packet)) {
@@ -475,7 +531,7 @@ public final class BlindstoneRuntime {
             var chunk=s.level.getChunkSource().getChunkNow(ChunkPos.getX(p.key),ChunkPos.getZ(p.key));
             if(chunk==null) throw new IllegalStateException("Prepared chunk disappeared");
             p.prepared=new ClientboundLevelChunkWithLightPacket(ChunkPos.getX(p.key),ChunkPos.getZ(p.key),
-                    ChunkFilter.snapshot(chunk,configuration.current().policy(),masks),p.prepared.lightData());p.publishedMasks=masks;
+                    ChunkFilter.snapshotCached(chunk,s.policy,masks),p.prepared.lightData());p.publishedMasks=masks;
         }
     }
     private void sendPreparedChunk(Session s,Pending p,ChannelFutureListener cb,boolean flush) {
@@ -492,13 +548,17 @@ public final class BlindstoneRuntime {
         boolean knowledge=addsKnowledge(s.state,p.key,p.publishedMasks);
         var plan=s.state.queue(p.key,p.publishedMasks);
         if(!s.state.markDelivered(plan)) throw new IllegalStateException("Chunk publication was invalidated");
-        s.clientChunks.add(p.key);s.pending.remove(p.key,p);s.entityVisibility.clear();
+        s.clientChunks.add(p.key);s.pending.remove(p.key,p);s.lightContexts.put(p.key,p.context);s.entityVisibility.clear();
         diagnostics.hookLoaded(BlindstoneDiagnostics.PacketPath.CHUNK_DATA);diagnostics.observed(BlindstoneDiagnostics.PacketPath.CHUNK_DATA,true);
         diagnostics.enforcement(BlindstoneDiagnostics.PacketPath.CHUNK_DATA,true);diagnostics.observed(BlindstoneDiagnostics.PacketPath.LIGHTING,true);
         diagnostics.enforcement(BlindstoneDiagnostics.PacketPath.LIGHTING,true);
         if(knowledge) for(int z=ChunkPos.getZ(p.key)-1;z<=ChunkPos.getZ(p.key)+1;z++) for(int x=ChunkPos.getX(p.key)-1;x<=ChunkPos.getX(p.key)+1;x++) {
             long key=ChunkPos.pack(x,z);if(key==p.key||!s.clientChunks.contains(key))continue;
-            var q=s.pending.remove(key);s.lights.forget(new ChunkPos(x,z));queueChunk(s,key);
+            var q=s.pending.get(key);
+            var previous=q!=null?q.context:s.lightContexts.get(key);
+            var included=previous==null?Map.<Integer,SectionVisibility>of():previous.masks(ChunkPos.unpack(p.key));
+            if(sameMasks(union(included,p.publishedMasks),included)) continue;
+            s.pending.remove(key);s.lights.forget(new ChunkPos(x,z));queueChunk(s,key);
         }
         if(addsKnowledge(s.state,p.key,s.desired.getOrDefault(p.key,Map.of()))) queueChunk(s,p.key);
     }
@@ -508,14 +568,14 @@ public final class BlindstoneRuntime {
     }
     private void invalidateLight(Session s,ChunkPos changed) {
         s.lights.invalidate(changed);
-        for(int z=changed.z()-1;z<=changed.z()+1;z++)for(int x=changed.x()-1;x<=changed.x()+1;x++) {
+        for(int z=changed.z()-2;z<=changed.z()+2;z++)for(int x=changed.x()-2;x<=changed.x()+2;x++) {
             long key=ChunkPos.pack(x,z);if(s.state.phase(key)==ViewerState.Phase.UNTRACKED)continue;
             var old=s.pending.remove(key);queueChunk(s,key);
         }
     }
     public void geometryChanged(ServerLevel level,BlockPos pos) {
         checkThread();
-        if(level!=server.overworld())return;
+        if(!supportedWorld(level))return;
         for(var s:viewers.values()) if(s.level==level) {
             double entityRange=configuration.current().settings().revealRangeBlocks()+6;
             // Point-sight endpoints are horizontally within tracking range. Keep all heights:
@@ -523,7 +583,21 @@ public final class BlindstoneRuntime {
             if(Math.abs(pos.getX()-s.player.getX())<=entityRange
                     &&Math.abs(pos.getZ()-s.player.getZ())<=entityRange) s.entityVisibility.clear();
             revokeUndelivered(s,ChunkPos.containing(pos));
-            if(s.job!=null&&s.job.intersectsChanged(pos)) {s.job=null;s.dirty=true;}
+            // Adding full opaque host rock cannot create a new sight path. Completed,
+            // fully published discovery needs no recapture; incomplete work is still revoked.
+            var newState=level.getBlockState(pos);
+            boolean settledOcclusion=s.job!=null && s.job.done() && !s.dirty && s.pending.isEmpty()
+                    && (newState.is(net.minecraft.world.level.block.Blocks.STONE) || newState.is(net.minecraft.world.level.block.Blocks.DEEPSLATE))
+                    && pos.getY()<com.evanchubbuck.blindstone.TerrainBoundary.rawSurface(level.getChunkAt(pos),pos.getX(),pos.getZ());
+            // Ore update radius schedules fresh sight, never grants authorization itself.
+            int radius = (level.dimension().equals(Level.NETHER) ? configuration.current().settings().netherOre()
+                    : configuration.current().settings().ore()).updateRadius();
+            double reach = configuration.current().settings().revealRangeBlocks() + radius;
+            if (!settledOcclusion && Math.abs(pos.getX()-s.player.getX()) <= reach && Math.abs(pos.getZ()-s.player.getZ()) <= reach
+                    && Math.abs(pos.getY()-s.player.getEyePosition().y) <= reach && hasNearbyOre(level,pos,s.policy.ores(),radius)) {
+                s.job=null;s.dirty=true;
+            }
+            if(!settledOcclusion && s.job!=null&&s.job.intersectsChanged(pos)) {s.job=null;s.dirty=true;}
             s.state.geometryChanged(ChunkPos.pack(pos));
             boolean exposed=authorized(s,pos);
             if(!exposed) {
@@ -532,10 +606,54 @@ public final class BlindstoneRuntime {
                     if(c!=null&&c.masks(ChunkPos.containing(pos)).getOrDefault(pos.getY()>>4,SectionVisibility.none()).isRevealed(pos.getX()&15,pos.getY()&15,pos.getZ()&15)) {exposed=true;break;}
                 }
             }
-            if(exposed&&s.lights!=null) {
-                invalidateLight(s,ChunkPos.containing(pos));
+            if((exposed || pos.getY() >= 64 || !s.policy.terrainEnabled())&&s.lights!=null) {
+                var unchanged=unchangedDarkLight(s,pos);
+                if(unchanged!=null) {
+                    var changed=ChunkPos.containing(pos);
+                    s.lights.revise(changed);queueChunk(s,changed.pack());
+                    var pending=s.pending.get(changed.pack());
+                    if(pending!=null) pending.preservedLight=unchanged;
+                } else invalidateLight(s,ChunkPos.containing(pos));
             }
         }
+    }
+
+    /** Zero light cannot propagate through a non-emitting edit with six zero neighbors.
+     * Only a fully settled published view can supply this incremental proof. */
+    private ClientboundLightUpdatePacketData unchangedDarkLight(Session s,BlockPos pos) {
+        if(!s.pending.isEmpty() || s.lights.pendingCount()!=0 || s.level.getBlockState(pos).getLightEmission()!=0) return null;
+        var terrain=s.level.getChunkSource().getChunkNow(pos.getX()>>4,pos.getZ()>>4);
+        if(terrain==null || s.policy.terrainEnabled() && pos.getY()>=com.evanchubbuck.blindstone.TerrainBoundary.rawSurface(terrain,pos.getX(),pos.getZ())) return null;
+        var center=s.lights.peekReady(ChunkPos.containing(pos));
+        if(center==null) return null;
+        for(int n=-1;n<6;n++) {
+            var sample=n<0?pos:pos.relative(net.minecraft.core.Direction.values()[n]);
+            if(sample.getY()<s.level.getMinY() || sample.getY()>s.level.getMaxY()) return null;
+            var data=s.lights.peekReady(ChunkPos.containing(sample));
+            if(data==null || packetLight(data,true,s.level,sample)!=0 || packetLight(data,false,s.level,sample)!=0) return null;
+        }
+        return center;
+    }
+    private static int packetLight(ClientboundLightUpdatePacketData data,boolean sky,ServerLevel level,BlockPos pos) {
+        int section=(pos.getY()>>4)-level.getMinSectionY()+1;
+        var mask=sky?data.skyYMask():data.blockYMask();
+        if(!mask.get(section)) return 0;
+        int update=mask.get(0,section).cardinality();
+        var bytes=(sky?data.skyUpdates():data.blockUpdates()).get(update);
+        int nibble=((pos.getY()&15)<<8)|((pos.getZ()&15)<<4)|(pos.getX()&15);
+        return bytes[nibble>>1]>>((nibble&1)*4)&15;
+    }
+    private boolean hasNearbyOre(ServerLevel level,BlockPos center,com.evanchubbuck.blindstone.OrePolicy ore,int radius) {
+        if(ore.targets().isEmpty()) return false;
+        var cursor=new BlockPos.MutableBlockPos();
+        for(int dz=-radius;dz<=radius;dz++) for(int dx=-radius;dx<=radius;dx++) for(int dy=-radius;dy<=radius;dy++) {
+            int y=center.getY()+dy;
+            if(y<level.getMinY() || y>level.getMaxY()) continue;
+            cursor.set(center.getX()+dx,y,center.getZ()+dz);
+            var chunk=level.getChunkSource().getChunkNow(cursor.getX()>>4,cursor.getZ()>>4);
+            if(chunk!=null && ore.hides(chunk.getBlockState(cursor),y)) return true;
+        }
+        return false;
     }
     /** Unsent authorization is revoked when a nearby occluder can change; sent knowledge is retained. */
     private void revokeUndelivered(Session s,ChunkPos changed) {
@@ -558,10 +676,12 @@ public final class BlindstoneRuntime {
                 .forEach(key->queueChunk(s,key));
     }
     public void chunksChanged(ServerLevel level,ChunkPos chunk) {
-        checkThread();if(level!=server.overworld())return;
+        checkThread();if(!supportedWorld(level))return;
+        com.evanchubbuck.blindstone.TerrainBoundary.invalidateNeighborhood(level,chunk);
         for(var s:viewers.values()) if(s.level==level&&s.lights!=null) {
             revokeUndelivered(s,chunk);
             if(s.job!=null&&s.job.intersectsChanged(chunk)) {s.job=null;s.dirty=true;}
+            if(s.exteriorEmpty && Math.abs(chunk.x()-s.player.chunkPosition().x())<=2 && Math.abs(chunk.z()-s.player.chunkPosition().z())<=2) s.dirty=true;
             if(Math.abs((long)chunk.x()-s.player.chunkPosition().x())<=2
                     &&Math.abs((long)chunk.z()-s.player.chunkPosition().z())<=2) {
                 s.safetyResult=null;s.lastCollectedSafety=null;s.entityVisibility.clear();
@@ -573,7 +693,7 @@ public final class BlindstoneRuntime {
         checkThread();if(entity instanceof Player||!protectedWorld(player))return true;
         if(entity.level()!=player.level())return false;
         var s=session(player);if(!s.clientChunks.contains(entity.chunkPosition().pack()))return false;
-        var policy=configuration.current().policy();if(!policy.protects(entity.blockPosition().getY()))return true;
+        var policy=s.policy;if(!policy.protects(s.level, entity.blockPosition()))return true;
         if(!authorized(s,entity.blockPosition()))return false;
         double range=configuration.current().settings().revealRangeBlocks()+4;
         if(player.distanceToSqr(entity)>range*range)return false;
@@ -608,7 +728,7 @@ public final class BlindstoneRuntime {
         return new SightDecision(false,complete);
     }
     private boolean authorized(Session s,BlockPos pos) {
-        if(!configuration.current().policy().protects(pos.getY()))return true;
+        if(!s.policy.protects(s.level, pos))return true;
         long key=ChunkPos.pack(pos);
         var mask=s.state.delivered(key,pos.getY()>>4);
         if(publishing)mask=mask.union(s.publishingMasks.getOrDefault(key,Map.of()).getOrDefault(pos.getY()>>4,SectionVisibility.none()));
@@ -636,8 +756,9 @@ public final class BlindstoneRuntime {
         checkThread();
         try {
             configuration.reload(server.overworld(),candidate->{
-                if(!candidate.policy().equals(configuration.current().policy())&&!viewers.isEmpty())
-                    throw new IllegalArgumentException("Changing protection bounds requires all viewers to disconnect first");
+                if(!viewers.isEmpty() && (!candidate.policy().equals(configuration.current().policy())
+                        || !candidate.settings().netherOre().resolve().equals(configuration.current().settings().netherOre().resolve())))
+                    throw new IllegalArgumentException("Changing concealment rules requires all viewers to disconnect first");
                 if(viewers.values().stream().anyMatch(s->s.state.trackedCount()>candidate.settings().budgets().maxTrackedChunksPerViewer()))
                     throw new IllegalArgumentException("New tracking budget cannot contain active viewers");
                 for(var s:viewers.values()){s.reprepareLighting();s.job=null;s.previousBody=null;s.previousVehicle=null;s.previousVehicleId=-1;s.dirty=true;}
@@ -661,8 +782,8 @@ public final class BlindstoneRuntime {
         var c=connection(player);var message=Component.literal(reason);
         c.send(new net.minecraft.network.protocol.common.ClientboundDisconnectPacket(message),future->c.disconnect(message));
     }
-    private boolean hasWorkBudget(long started){return workSpentNanos+System.nanoTime()-started<configuration.current().settings().budgets().maxWorkNanosPerTick();}
-    private boolean hasWorkBudget(){return workSpentNanos<configuration.current().settings().budgets().maxWorkNanosPerTick();}
+    private boolean hasWorkBudget(long started){return workSpentNanos+packetWorkNanos+System.nanoTime()-started<configuration.current().settings().budgets().maxWorkNanosPerTick();}
+    private boolean hasWorkBudget(){return workSpentNanos+packetWorkNanos<configuration.current().settings().budgets().maxWorkNanosPerTick();}
     public boolean tryTrackingStep(){checkThread();if(failed||!enabled||!hasWorkBudget()||rayWorkRemaining<=0)return false;rayWorkRemaining--;return true;}
     public void recordTrackingWork(long nanos){checkThread();if(nanos<0)throw new IllegalArgumentException("Negative tracking work");workSpentNanos+=nanos;}
     private void updateCounts(){diagnostics.counts(viewers.size(),viewers.values().stream().mapToInt(s->s.state.trackedCount()).sum(),viewers.values().stream().mapToInt(s->s.pending.size()).sum());}
@@ -688,7 +809,7 @@ public final class BlindstoneRuntime {
         final Session s;final Map<Long,Map<Integer,SectionVisibility>> frozen;
         Context(Session s,Map<Long,Map<Integer,SectionVisibility>> frozen){this.s=s;this.frozen=frozen;}
         public ServerLevel level(){return s.level;}
-        public ConcealmentPolicy policy(){return configuration.current().policy();}
+        public ConcealmentPolicy policy(){return s.policy;}
         public boolean isAuthorized(BlockPos pos){return authorized(s,pos);}
         public boolean isEntityVisible(int id){if(id==s.player.getId())return true;var e=s.level.getEntity(id);return e instanceof Player||s.announced.contains(id)&&e!=null&&entityMayBeSeen(s.player,e);}
         public boolean maySpawnEntity(int id){var e=s.level.getEntity(id);return e!=null&&entityMayBeSeen(s.player,e);}
@@ -701,25 +822,26 @@ public final class BlindstoneRuntime {
         public ClientboundLightUpdatePacketData light(ChunkPos chunk){var p=s.pending.get(chunk.pack());var light=p==null?null:s.lights.getReady(chunk,p.generation);if(light==null)throw new IllegalStateException("Filtered lighting is not ready");return light;}
     }
     private record FrozenContext(ServerLevel level,ConcealmentPolicy policy,Map<Long,Map<Integer,SectionVisibility>> views) implements PacketFilter.Context {
-        public boolean isAuthorized(BlockPos pos){return !policy.protects(pos.getY())||masks(ChunkPos.containing(pos)).getOrDefault(pos.getY()>>4,SectionVisibility.none()).isRevealed(pos.getX()&15,pos.getY()&15,pos.getZ()&15);}
+        public boolean isAuthorized(BlockPos pos){return !policy.protects(level, pos)||masks(ChunkPos.containing(pos)).getOrDefault(pos.getY()>>4,SectionVisibility.none()).isRevealed(pos.getX()&15,pos.getY()&15,pos.getZ()&15);}
         public boolean isEntityVisible(int id){return false;}
         public Map<Integer,SectionVisibility> masks(ChunkPos chunk){return views.getOrDefault(chunk.pack(),Map.of());}
     }
     private static final class Session {
-        final ServerPlayer player;final ServerLevel level;final ViewerState state;
+        final ServerPlayer player;final ServerLevel level;final ViewerState state;final ConcealmentPolicy policy;
         final Map<Integer,EntitySight> entityVisibility=new HashMap<>();
         final Set<Integer> announced=new HashSet<>();final Set<Long> clientChunks=new HashSet<>();
         final Map<Long,Map<Integer,SectionVisibility>> desired=new HashMap<>();
+        final Map<Long,PacketFilter.Context> lightContexts=new HashMap<>();
         final Map<Long,Pending> pending=new LinkedHashMap<>();final ArrayDeque<Batch>batches=new ArrayDeque<>();
         LightScheduler lights;Batch openBatch;Packet<?> trustedPacket;long generation;
         int previousVehicleId=-1;AABB previousBody,previousVehicle;VisibilityEvaluator.Job job;Vec3 jobOrigin;AABB jobBody;
-        long lastRefresh=-100,lastSafeDelivery;int rayWorkUsed;boolean dirty=true;
+        long lastRefresh=-100,lastSafeDelivery;int rayWorkUsed;boolean dirty=true,exteriorEmpty;
         Map<Long,Map<Integer,SectionVisibility>> publishingMasks=Map.of();
-        Session(ServerPlayer player,BlindstoneConfig.EffectiveConfig config){this.player=player;level=player.level();state=new ViewerState(config.settings().budgets().maxTrackedChunksPerViewer(),config.policy().minY()>>4,config.policy().maxY()>>4);}
+        Session(ServerPlayer player,BlindstoneConfig.EffectiveConfig config){this.player=player;level=player.level();policy=config.settings().policyFor(level);state=new ViewerState(config.settings().budgets().maxTrackedChunksPerViewer(),policy.minY()>>4,policy.maxY()>>4);}
         VisibilityEvaluator.SafetyInput cachedSafetyInput,lastCollectedSafety;
         VisibilityEvaluator.Result safetyResult;
         boolean safetyPublished;
-        void reprepareLighting(){safetyResult=null;lastCollectedSafety=null;if(lights!=null)lights.reset();pending.clear();publishingMasks=Map.of();}
+        void reprepareLighting(){safetyResult=null;lastCollectedSafety=null;if(lights!=null)lights.reset();pending.clear();lightContexts.clear();publishingMasks=Map.of();}
         void clearLighting(){
             var connection=player.connection==null?null:((com.evanchubbuck.blindstone.mixin.ServerCommonListenerAccess)player.connection).blindstone$connection();
             var failure=new IllegalStateException("Blindstone delivery session ended before publication");
@@ -732,6 +854,7 @@ public final class BlindstoneRuntime {
     }
     private static final class Pending {
         final long key,generation,queuedTick;final Map<Integer,SectionVisibility>masks;
+        ClientboundLightUpdatePacketData preservedLight;
         PacketFilter.Context context;ClientboundLevelChunkWithLightPacket prepared;Map<Integer,SectionVisibility>publishedMasks=Map.of();long preparedTick;
         Pending(long key,Map<Integer,SectionVisibility>masks,long generation,long tick){this.key=key;this.masks=masks;this.generation=generation;queuedTick=tick;}
     }

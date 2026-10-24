@@ -1,3 +1,19 @@
+# Acceptance repair verified — 2026-10-24
+
+Cold-cache follow-up: [COLD_CACHE_PERFORMANCE.md](COLD_CACHE_PERFORMANCE.md) records the separate cold 1/2/4/8-viewer regression, profiling, source fixes and clean 151/151 validation. Earlier shared-region eight-viewer tables in this report are warm-cache evidence, not cold-start results.
+
+The broad-opening/security controls and cold, warm-shared and default-range eight-viewer gates pass in isolated synthetic tests. Independent verification passed **151/151 GameTests**, **32 Python tests**, clean build, JAR audit and `git diff --check`. Exact cold/warm p95, max, drain and artifact evidence are in [COLD_CACHE_PERFORMANCE.md](COLD_CACHE_PERFORMANCE.md); the earlier shared-cache repair is in [ACCEPTANCE_REPAIR.md](ACCEPTANCE_REPAIR.md). Graphical gameplay, live-server performance, representative modpack compatibility, authenticated/proxy admission and ordinary server admission remain unverified. The work is confined to `codex/development`; no main merge, release or deployment is authorized or performed.
+
+The following sections are preserved historical checkpoints for their stated revisions. Their failing/pending status is superseded by the repair report above.
+
+# Mountain foundation update (2026-10-24)
+
+Continuation status supersedes the earlier scope paragraph below: native configurable Overworld/Nether ore filtering has been added, but the combined feature remains unaccepted. Initial targeted ore/delivery tests passed 11/11 and post-optimization lighting tests passed 13/13. The failing broad-opening regression, a passing limited seam fixture, and failing matched performance gates are retained; full-suite results and current artifact evidence are recorded in [the continuation checkpoint](ORE_PERFORMANCE_CHECKPOINT.md).
+
+The bounded mountain foundation is implemented: **136/136 GameTests**, **6/6 targeted mountain tests**, **32 Python tests**, fresh build and JAR audit pass with EULA false. Rooms/storage/torch/ore at Y=96/128/192, natural roof/sky, narrow shafts, private viewer masks, two connection pipelines and local roof invalidation are covered. See [phase evidence and exact changed files](MOUNTAIN_PHASE.md).
+
+This is **not overall completion**. Configurable ore targets, broader terrain/opening coverage, independent verification, performance/backlog optimization and final CI remain open. The older sections below are historical evidence for their stated versions, not a claim that the former Y<64-only policy is current.
+
 # Private alpha test report
 
 ## Anti-base redesign — October 24, 2026

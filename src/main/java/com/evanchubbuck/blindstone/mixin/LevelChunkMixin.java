@@ -17,6 +17,7 @@ public abstract class LevelChunkMixin {
             CallbackInfoReturnable<BlockState> callback) {
         var chunk = (LevelChunk) (Object) this;
         if (callback.getReturnValue() == null || !(chunk.getLevel() instanceof ServerLevel level)) return;
+        com.evanchubbuck.blindstone.TerrainBoundary.invalidate(chunk, pos.getX(), pos.getZ());
         var runtime = BlindstoneRuntime.get(level.getServer());
         if (runtime != null) runtime.geometryChanged(level, pos);
     }

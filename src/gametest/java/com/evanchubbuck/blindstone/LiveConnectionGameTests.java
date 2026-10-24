@@ -115,14 +115,14 @@ public final class LiveConnectionGameTests {
         var chunk = helper.getLevel().getChunkAt(fixture.player.blockPosition());
         BlockPos hidden = null;
         var policy = fixture.runtime.configuration().current().policy();
-        for (int y = policy.maxY() - 1; y >= policy.minY(); y--) {
+        for (int y = Math.min(policy.maxY(), policy.exteriorMinY()) - 1; y >= policy.minY(); y--) {
             var candidate = new BlockPos(chunk.getPos().getMinBlockX() + 12, y, chunk.getPos().getMinBlockZ() + 12);
             if (Math.abs(y - fixture.player.getY()) > 20 && chunk.getBlockState(candidate).isAir()) { hidden = candidate; break; }
         }
         if (hidden == null) { fixture.close(); throw new IllegalStateException("TCP fixture needs protected real air beyond the maximum reveal range"); }
         final BlockPos distantAir = hidden;
-        // Outdoor air is public even below the cutoff. Explicitly cover this fixture's distant
-        // air so the real TCP regression continues to exercise concealed underground geometry.
+        // Keep this original underground transport control below the always-private boundary;
+        // the mountain fixtures separately exercise public sky above that boundary.
         var roof = new java.util.LinkedHashMap<BlockPos, BlockState>();
         for (int z = -2; z <= 2; z++) for (int x = -2; x <= 2; x++) {
             var pos = distantAir.offset(x, 1, z);

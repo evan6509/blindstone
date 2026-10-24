@@ -273,7 +273,7 @@ public final class PacketFilter {
     }
 
     private static boolean authorized(Context context, BlockPos pos) {
-        return !context.policy().protects(pos.getY()) || context.isAuthorized(pos);
+        return !context.policy().protects(context.level(), pos) || context.isAuthorized(pos);
     }
 
     private static Packet<?> section(ClientboundSectionBlocksUpdatePacket input, Context context) {

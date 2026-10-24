@@ -17,12 +17,64 @@ import net.minecraft.gametest.framework.GameTestHelper;
 /** Real server-thread configuration lifecycle tests; diagnostics remain aggregate-only. */
 public final class ConfigurationGameTests {
     @GameTest
+    public void defaultCommonOreTagResolvesActualRegistryMembers(GameTestHelper helper) {
+        var common=new BlindstoneConfig.Ore(true,256,2,List.of("#c:ores")).resolve();
+        var defaults=BlindstoneConfig.Ore.defaults().resolve();
+        helper.assertTrue(!common.targets().isEmpty(),"Pinned Fabric common ore tag must resolve");
+        helper.assertTrue(common.targets().contains(net.minecraft.world.level.block.Blocks.DIAMOND_ORE),"Common tag contains actual diamond ore");
+        helper.assertTrue(defaults.targets().containsAll(common.targets()),"Defaults include every resolved common ore member");
+        helper.succeed();
+    }
+
+    @GameTest
+    public void oreRulesExpandTagsAndApplyExclusionsStrictly(GameTestHelper helper) {
+        String json = ConfigCodec.encode(BlindstoneConfig.defaults());
+        var root = JsonParser.parseString(json).getAsJsonObject();
+        var ore = new com.google.gson.JsonObject();
+        ore.addProperty("enabled", true); ore.addProperty("maxBlockHeight", 256);
+        ore.addProperty("updateRadius", 2);
+        var rules = new com.google.gson.JsonArray(); rules.add("#minecraft:diamond_ores");
+        rules.add("!minecraft:deepslate_diamond_ore"); ore.add("targets", rules);
+        root.add("ore", ore);
+        var policy = ConfigCodec.decode(root.toString()).forWorldBounds(-64, 320).policy();
+        var chunk = new net.minecraft.world.level.chunk.LevelChunk(helper.getLevel(), new net.minecraft.world.level.ChunkPos(0, 0));
+        chunk.getSection(chunk.getSectionIndex(160)).setBlockState(8, 0, 8, net.minecraft.world.level.block.Blocks.DIAMOND_ORE.defaultBlockState());
+        chunk.getSection(chunk.getSectionIndex(160)).setBlockState(9, 0, 8, net.minecraft.world.level.block.Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState());
+        helper.assertTrue(policy.protects(chunk, 8, 160, 8), "Tag expansion must include diamond ore");
+        helper.assertTrue(!policy.protects(chunk, 9, 160, 8), "Left-to-right exclusion must remove deepslate ore");
+        for (String invalid : List.of("missing:ore", "#missing:ores", "diamond_ore", "!", "minecraft:air")) {
+            rules.set(0, new com.google.gson.JsonPrimitive(invalid));
+            fails(helper, () -> ConfigCodec.decode(root.toString()).forWorldBounds(-64, 320), IllegalArgumentException.class);
+        }
+        helper.succeed();
+    }
+
+    @GameTest
+    public void legacyDefaultCutoffMigratesWithoutLosingUnrelatedSettings(GameTestHelper helper) {
+        var legacy = JsonParser.parseString(ConfigCodec.encode(BlindstoneConfig.defaults())).getAsJsonObject();
+        legacy.addProperty("schemaVersion", 1);
+        legacy.addProperty("protectedMaxY", 64);
+        legacy.addProperty("revealRangeBlocks", 8);
+        legacy.getAsJsonObject("budgets").addProperty("maxViewers", 48);
+        var migrated = ConfigCodec.decode(legacy.toString());
+        var effective = migrated.forWorldBounds(helper.getLevel().getMinY(), helper.getLevel().getMaxY() + 1);
+        helper.assertTrue(effective.policy().protects(192), "Legacy default must migrate to protect mountain interiors at Y=192");
+        helper.assertTrue(migrated.revealRangeBlocks() == 8, "Migration must preserve an unrelated customized reveal range");
+        helper.assertTrue(migrated.budgets().maxViewers() == 48, "Migration preserves unrelated budgets");
+        legacy.addProperty("protectedMaxY", 128);
+        var custom = ConfigCodec.decode(legacy.toString());
+        helper.assertTrue(custom.protectedMaxY() == 128 && custom.schemaVersion() == 2,
+                "Intentional custom caps migrate without being raised");
+        helper.succeed();
+    }
+
+    @GameTest
     public void configurationRoundTripsAndUsesActualWorldMinimum(GameTestHelper helper) {
         var defaults = BlindstoneConfig.defaults();
         helper.assertTrue(ConfigCodec.decode(ConfigCodec.encode(defaults)).equals(defaults), "All defaults must round-trip exactly");
         var effective = defaults.forWorldBounds(helper.getLevel().getMinY(), helper.getLevel().getMinY() + helper.getLevel().getHeight());
-        helper.assertTrue(effective.policy().minY() == helper.getLevel().getMinY() && effective.policy().maxY() == 64,
-                "Protection must use the actual world minimum and exclusive configured cutoff");
+        helper.assertTrue(effective.policy().minY() == helper.getLevel().getMinY() && effective.policy().maxY() == 320,
+                "Protection must use the actual world minimum and exclusive configured mountain cap");
         var mutable = new ArrayList<>(List.of(BlindstoneConfig.OVERWORLD));
         var config = new BlindstoneConfig(1, mutable, 64, true, true, "preserve_audible", defaults.replacements(), 8, 1, 0.0625, defaults.budgets());
         mutable.clear();
@@ -34,9 +86,9 @@ public final class ConfigurationGameTests {
     @GameTest
     public void strictConfigurationRejectsUnknownMissingDuplicateAndMistypedFields(GameTestHelper helper) {
         String json = ConfigCodec.encode(BlindstoneConfig.defaults());
-        fails(helper, () -> ConfigCodec.decode(json.replace("\"schemaVersion\": 1", "\"schemaVersion\": 1, \"fallback\": true")), IllegalArgumentException.class);
-        fails(helper, () -> ConfigCodec.decode(json.replace("\"schemaVersion\": 1,", "")), IllegalArgumentException.class);
-        fails(helper, () -> ConfigCodec.decode(json.replace("\"schemaVersion\": 1", "\"schemaVersion\": 1, \"schemaVersion\": 1")), IllegalArgumentException.class);
+        fails(helper, () -> ConfigCodec.decode(json.replace("\"schemaVersion\": 2", "\"schemaVersion\": 2, \"fallback\": true")), IllegalArgumentException.class);
+        fails(helper, () -> ConfigCodec.decode(json.replace("\"schemaVersion\": 2,", "")), IllegalArgumentException.class);
+        fails(helper, () -> ConfigCodec.decode(json.replace("\"schemaVersion\": 2", "\"schemaVersion\": 2, \"schemaVersion\": 2")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("\"maxViewers\": 128", "\"maxViewers\": 128, \"maxViewers\": 128")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("\"refreshIntervalTicks\": 1", "\"refreshIntervalTicks\": 2.5")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("\"concealAir\": true", "\"concealAir\": \"true\"")), IllegalArgumentException.class);
@@ -49,13 +101,13 @@ public final class ConfigurationGameTests {
     public void invalidProtectionAndReplacementChoicesCannotRelaxConcealment(GameTestHelper helper) {
         String json = ConfigCodec.encode(BlindstoneConfig.defaults());
         fails(helper, () -> ConfigCodec.decode(json.replace("minecraft:overworld", "minecraft:the_nether")), IllegalArgumentException.class);
-        fails(helper, () -> ConfigCodec.decode(json.replace("\"protectedMaxY\": 64", "\"protectedMaxY\": 63")), IllegalArgumentException.class);
+        fails(helper, () -> ConfigCodec.decode(json.replace("\"protectedMaxY\": 320", "\"protectedMaxY\": 63")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("\"concealAir\": true", "\"concealAir\": false")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("minecraft:stone", "minecraft:glowstone")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("minecraft:deepslate", "minecraft:chest")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("minecraft:stone", "unknown:block")), IllegalArgumentException.class);
         fails(helper, () -> ConfigCodec.decode(json.replace("\"maxMaskBytes\": 67108864", "\"maxMaskBytes\": 1024")).forWorldBounds(-64, 320), IllegalArgumentException.class);
-        fails(helper, () -> BlindstoneConfig.defaults().forWorldBounds(64, 320), IllegalArgumentException.class);
+        fails(helper, () -> BlindstoneConfig.defaults().forWorldBounds(320, 384), IllegalArgumentException.class);
         fails(helper, () -> BlindstoneConfig.defaults().forWorldBounds(-64, 48), IllegalArgumentException.class);
         helper.succeed();
     }
@@ -89,7 +141,7 @@ public final class ConfigurationGameTests {
             fails(helper, () -> manager.reload(helper.getLevel(), candidate -> invalidated[0] = true), IllegalArgumentException.class);
             helper.assertTrue(!invalidated[0] && manager.current() == original && manager.generation() == 1,
                     "Invalid reload must retain current configuration without invalidating active work");
-            Files.writeString(file, defaults.replace("\"protectedMaxY\": 64", "\"protectedMaxY\": 48"));
+            Files.writeString(file, defaults.replace("\"protectedMaxY\": 320", "\"protectedMaxY\": 48"));
             var replacement = manager.reload(helper.getLevel(), candidate -> {
                 helper.assertTrue(manager.current() == original && candidate.policy().maxY() == 48,
                         "Stale work must invalidate before a fully validated replacement is published");
@@ -161,7 +213,7 @@ public final class ConfigurationGameTests {
                     "Reports must omit file paths, player identifiers, positions, seeds and arbitrary error text");
             helper.assertTrue(report.getAsJsonObject("failureCounts").getAsJsonObject("CHUNK_FILTER").get("SERIALIZATION_FAILED").getAsInt() == 1,
                     "Sanitized failures must retain typed subsystem and count");
-            helper.assertTrue(diagnostics.status(config).contains("backlog=3") && diagnostics.status(config).contains("Y[-64,64)"),
+            helper.assertTrue(diagnostics.status(config).contains("backlog=3") && diagnostics.status(config).contains("Y[-64,320)"),
                     "Status must show effective bounds and queue state");
         } finally { Files.deleteIfExists(destination); Files.deleteIfExists(directory); }
         helper.succeed();

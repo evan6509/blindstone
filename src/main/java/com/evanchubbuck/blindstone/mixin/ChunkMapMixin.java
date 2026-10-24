@@ -22,7 +22,7 @@ public abstract class ChunkMapMixin {
     @Inject(method = "tick()V", at = @At("HEAD"))
     private void blindstone$refreshBeforeTracking(CallbackInfo callback) {
         var runtime = BlindstoneRuntime.get(level.getServer());
-        if (runtime == null || !level.dimension().equals(net.minecraft.world.level.Level.OVERWORLD)) return;
+        if (runtime == null) return;
         runtime.refresh(level);
         // Vanilla normally refreshes pairing only when sections change. Visibility can change in place.
         var players = List.copyOf(level.players());
