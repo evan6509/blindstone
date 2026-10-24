@@ -136,7 +136,7 @@ public final class PlayableGameTests {
 
     private void matchedMountainOreQueueAcceptance(GameTestHelper helper, boolean cold) throws Exception {
         var results = new ArrayList<Map<String,Object>>();
-        boolean[] passed = {true};
+        var failures = new ArrayList<String>();
         try (var settings = new Settings(helper,true); var terrain = new Terrain(helper.getLevel())) {
             for(int count:List.of(1,2,4,8)) {
                 var origin = center(helper,192).offset(cold ? 8192 + count * 1024 : 0,0,0);
@@ -175,19 +175,27 @@ public final class PlayableGameTests {
                     }
                     long preparationNanos=System.nanoTime()-preparationStart;
                     initial.put("event_ns",preparationNanos);
-                    if(count==8 && preparationNanos>=50_000_000) passed[0]=false;
+                    if(count==8) acceptanceGate(initial,failures,"event_ns",preparationNanos,"<",50_000_000,preparationNanos<50_000_000);
                     initial.putAll(settleBenchmark(helper,settings.runtime,viewers));initial.put("status","delivered");
-                    for(var viewer:viewers) helper.assertTrue(viewer.chunks().size()>=9 && settings.runtime.inspect(viewer.player).startsWith("Tracked chunks=9;"),"Initial workload must deliver and track nine chunks per viewer");
-                    if(cold && ((Number)initial.get("boundaryScans")).longValue()<9*256) passed[0]=false;
-                    if(cold) {
-                        var first=(Map<?,?>)initial.get("first_frame_work");
-                        if(((Number)first.get("boundaryScans")).longValue()<9*256
-                                || ((Number)first.get("boundaryCacheHits")).longValue()!=0) passed[0]=false;
+                    for(var viewer:viewers) {
+                        int chunks=viewer.chunks().size();
+                        boolean delivered=chunks>=9 && settings.runtime.inspect(viewer.player).startsWith("Tracked chunks=9;");
+                        if(!delivered) {
+                            acceptanceGate(initial,failures,"delivered_chunks",chunks,">=",9,chunks>=9);
+                            String tracked=settings.runtime.inspect(viewer.player);
+                            acceptanceGate(initial,failures,"tracked_chunks",tracked,"startsWith","Tracked chunks=9;",tracked.startsWith("Tracked chunks=9;"));
+                        }
+                        helper.assertTrue(delivered,"Initial workload must deliver and track nine chunks per viewer: "+String.join("; ",failures));
                     }
-                    if(cold && ((Number)initial.get("boundaryCellReads")).longValue()>((Number)initial.get("boundaryScans")).longValue()*32) passed[0]=false;
-                    if(((Number)initial.get("active_samples")).intValue()>200) passed[0]=false;
-                    if(count==8 && (((Number)initial.get("active_p95_ns")).longValue()>10_000_000
-                            || ((Number)initial.get("max_ns")).longValue()>=50_000_000)) passed[0]=false;
+                    if(cold) {
+                        long scans=((Number)initial.get("boundaryScans")).longValue();
+                        acceptanceGate(initial,failures,"boundaryScans",scans,">=",9*256,scans>=9*256);
+                        long reads=((Number)initial.get("boundaryCellReads")).longValue();
+                        acceptanceGate(initial,failures,"boundaryCellReads",reads,"<=",scans*32,reads<=scans*32);
+                    }
+                    int activeSamples=((Number)initial.get("active_samples")).intValue();
+                    acceptanceGate(initial,failures,"active_samples",activeSamples,"<=",200,activeSamples<=200);
+                    if(count==8) acceptanceFrameGates(initial,failures);
                     for(String event:List.of("single-edit","ore-exposure","four-cell-burst","roof","shaft","movement","resend","stream")) {
                         var row=new LinkedHashMap<String,Object>();
                         row.put("cache_mode",cold?"cold":"warm-shared");row.put("event",event);row.put("viewers",count);
@@ -217,22 +225,55 @@ public final class PlayableGameTests {
                         row.put("event_ns",eventNanos);row.put("status","settling");
                         try { row.putAll(settleBenchmark(helper,settings.runtime,viewers));row.put("status","delivered"); }
                         catch(RuntimeException | Error failure) {row.put("status","failed");row.put("failure",failure.toString());throw failure;}
-                        for(var viewer:viewers) helper.assertTrue(settings.runtime.inspect(viewer.player).startsWith("Tracked chunks=9;"),"Event workload must keep nine tracked chunks per viewer");
+                        for(var viewer:viewers) {
+                            String tracked=settings.runtime.inspect(viewer.player);
+                            boolean delivered=tracked.startsWith("Tracked chunks=9;");
+                            acceptanceGate(row,failures,"tracked_chunks",tracked,"startsWith","Tracked chunks=9;",delivered);
+                            helper.assertTrue(delivered,"Event workload must keep nine tracked chunks per viewer: "+String.join("; ",failures));
+                        }
                         row.put("cache_mode",cold?"cold":"warm-shared");row.put("event",event);row.put("viewers",count);row.put("event_ns",eventNanos);
                         int drain=((Number)row.get("samples")).intValue()-16;
                         row.put("drain_refreshes",drain);
-                        if(cold && event.equals("stream") && ((Number)row.get("boundaryScans")).longValue()<9*256) passed[0]=false;
-                        if(event.equals("single-edit") && drain>20 || List.of("four-cell-burst","ore-exposure","roof","shaft").contains(event) && drain>40) passed[0]=false;
-                        if(count==8 && (((Number)row.get("active_p95_ns")).longValue()>10_000_000
-                                ||((Number)row.get("max_ns")).longValue()>=50_000_000 || eventNanos>=50_000_000)) passed[0]=false;
+                        if(cold && event.equals("stream")) {
+                            long scans=((Number)row.get("boundaryScans")).longValue();
+                            acceptanceGate(row,failures,"boundaryScans",scans,">=",9*256,scans>=9*256);
+                        }
+                        if(event.equals("single-edit")) acceptanceGate(row,failures,"drain_refreshes",drain,"<=",20,drain<=20);
+                        if(List.of("four-cell-burst","ore-exposure","roof","shaft").contains(event))
+                            acceptanceGate(row,failures,"drain_refreshes",drain,"<=",40,drain<=40);
+                        if(count==8) {
+                            acceptanceFrameGates(row,failures);
+                            acceptanceGate(row,failures,"event_ns",eventNanos,"<",50_000_000,eventNanos<50_000_000);
+                        }
                     }
                 } finally {for(var viewer:viewers)viewer.close();}
             }
         } finally {
             Files.writeString(Path.of(cold?"mountain-ore-cold-acceptance.json":"mountain-ore-acceptance.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(results));
         }
-        helper.assertTrue(passed[0],"Mountain/ore cold="+cold+" frame, scan or 20/40-refresh drain gate failed; inspect workload JSON");
+        helper.assertTrue(failures.isEmpty(),"Mountain/ore cold="+cold+" acceptance gate failures: "+String.join("; ",failures));
         helper.succeed();
+    }
+
+    private static void acceptanceFrameGates(Map<String,Object> row,List<String> failures) {
+        long p95=((Number)row.get("active_p95_ns")).longValue();
+        long max=((Number)row.get("max_ns")).longValue();
+        acceptanceGate(row,failures,"active_p95_ns",p95,"<=",10_000_000,p95<=10_000_000);
+        acceptanceGate(row,failures,"max_ns",max,"<",50_000_000,max<50_000_000);
+    }
+
+    private static void acceptanceGate(Map<String,Object> row,List<String> failures,String gate,
+                                       Object measured,String operator,Object bound,boolean passed) {
+        if(passed) return;
+        var failure=new LinkedHashMap<String,Object>();
+        failure.put("event",row.get("event"));failure.put("viewers",row.get("viewers"));
+        failure.put("gate",gate);failure.put("measured",measured);
+        failure.put("required_operator",operator);failure.put("required_bound",bound);
+        @SuppressWarnings("unchecked")
+        var rowFailures=(List<Map<String,Object>>)row.computeIfAbsent("gate_failures",key->new ArrayList<Map<String,Object>>());
+        rowFailures.add(failure);
+        failures.add("event="+row.get("event")+" viewers="+row.get("viewers")
+                +" gate="+gate+" measured="+measured+" required="+operator+" "+bound);
     }
 
     /** Default configuration, repeated accepted rebases and nine real tracked chunks per viewer. */
